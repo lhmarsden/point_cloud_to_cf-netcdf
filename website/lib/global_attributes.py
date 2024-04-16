@@ -9,10 +9,10 @@ Created on Tue Dec 13 08:53:13 2022
 import pandas as pd
 import numpy as np
 
-class ACDD_conventions_df():
+class Global_attributes_df():
     '''
-    Class for pulling ACDD conventions to a pandas dataframe
-    Only try to pull latest ACDD conventions if online
+    Class for pulling global attributes to a pandas dataframe
+    Only try to pull latest global attributes if online
     Otherwise pull from existing CSV
     So the CSV overwrites each time the script runs if online
     '''
@@ -29,13 +29,13 @@ class ACDD_conventions_df():
 
     def pull_from_online(self):
         '''
-        Script to harvest the ACDD conventions to a pandas dataframe
+        Script to harvest the global attributes to a pandas dataframe
         Take them from the ADC page
 
         Returns
         -------
         df: pandas dataframe
-            ACDD conventions in a dataframe
+            global attributes in a dataframe
 
         '''
         url = 'https://adc.met.no/node/4'
@@ -71,27 +71,27 @@ class ACDD_conventions_df():
         '''
         self.df = pd.read_csv(self.filename, index_col=False)
 
-def acdd_conventions_update(path):
+def global_attributes_update(path):
     errors = []
-    acdd = ACDD_conventions_df(path)
+    global_attributes = Global_attributes_df(path)
     try:
-        acdd.pull_from_online()
+        global_attributes.pull_from_online()
     except:
-        errors.append("Could not update ACDD configuration. Couldn't access data from source URL")
+        errors.append("Could not update. Couldn't access data from source URL")
         return errors
     try:
-        acdd.add_recommendations_column()
+        global_attributes.add_recommendations_column()
     except:
-        errors.append("Could not update ACDD configuration. Error adding recommendations column")
+        errors.append("Could not update. Error adding recommendations column")
         return errors
     try:
-        acdd.output_to_csv()
+        global_attributes.output_to_csv()
     except:
-        errors.append("Could not update ACDD configuration. Couldn't save the CSV file.")
+        errors.append("Could not update. Couldn't save the CSV file.")
         return errors
     return errors
 
-def acdd_to_df(path):
-    acdd = ACDD_conventions_df(path)
-    acdd.read_csv()
-    return acdd.df
+def global_attributes_to_df(path):
+    global_attributes = Global_attributes_df(path)
+    global_attributes.read_csv()
+    return global_attributes.df
