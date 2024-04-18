@@ -3,9 +3,10 @@
 import os
 from website.lib.global_attributes import global_attributes_update
 
-BASE_PATH = os.path.dirname(os.path.abspath(__file__))
-FIELDS_FILEPATH = os.path.join(BASE_PATH, 'config')
+errors = global_attributes_update()
 
-global_attributes_update(FIELDS_FILEPATH)
-
-print('success')
+if len(errors) > 0:
+    for error in errors:
+        print(error)
+else:
+    print('success')
