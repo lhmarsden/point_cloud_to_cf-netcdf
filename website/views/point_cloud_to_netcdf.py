@@ -1,11 +1,13 @@
 from flask import Flask, render_template, request, Blueprint, send_file, flash, redirect, session
 from werkzeug.utils import secure_filename
 import os
-from website.lib.read_data import ascii_to_df
-from website.lib.create_netcdf import df_to_netcdf
-from website.lib.global_attributes import global_attributes_to_df
+from lib.read_data import ascii_to_df
+from lib.create_netcdf import df_to_netcdf
+from lib.global_attributes import global_attributes_to_df
+from lib.check_global_attributes import check_global_attributes
 import numpy as np
 from datetime import datetime, timezone
+import json
 
 
 point_cloud_to_netcdf = Blueprint('point_cloud_to_netcdf', __name__)
@@ -119,21 +121,70 @@ def preview_dataframe():
 @point_cloud_to_netcdf.route('/global_attributes', methods=['GET', 'POST'])
 def global_attributes():
 
+    filepath = session.get('filepath')
+    filename = session.get('filename')
+    header_row = session.get('header_row')
+    data_start_row = session.get('data_start_row')
+
+    session['filename'] = filename
+    session['filepath'] = filepath
+    session['header_row'] = header_row
+    session['data_start_row'] = data_start_row
+
     df_metadata = global_attributes_to_df()
-    df_metadata['placeholder'] = df_metadata['placeholder'].fillna('')
+    df_metadata['value'] = df_metadata['value'].fillna('')
     df_metadata['choices'] = df_metadata['choices'].fillna('')
     df_metadata['Comment'] = df_metadata['Comment'].fillna('')
+    json_string = df_metadata.to_json(orient='records')
+    json_data = json.loads(json_string)
 
     current_time_utc = datetime.now(timezone.utc)
     iso8601_time_utc = current_time_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
-    df_metadata.loc[df_metadata['Attribute'] == 'date_created', 'placeholder'] = iso8601_time_utc
+    df_metadata.loc[df_metadata['Attribute'] == 'date_created', 'value'] = iso8601_time_utc
 
-    #TODO: read in data from form to a dictionary with attributes and values
+    if request.method == 'POST':
+        logged_attributes_list = []
+        for key, value in request.form.items():
+            if value:  # Check if a value has been entered
+                logged_attributes_list.append(key)
+            for item in json_data:
+                if item['Attribute'] == key:
+                    if item['format'] == 'number':
+                        item['value'] = float(value)
+                    else:
+                        item['value'] = value
+
+        logged_attributes = {}
+        for item in json_data:
+            attribute = item['Attribute']
+            value = item['value']
+            logged_attributes[attribute] = value
+
+        required_attributes = df_metadata.loc[df_metadata['Requirement'] == 'Required', 'Attribute'].tolist()
+        missing_attributes = [attr for attr in required_attributes if attr not in logged_attributes_list]
+
+        if missing_attributes:
+            flash(f'Required attributes not filled in: {missing_attributes}', category='error')
+            return render_template('global_attributes.html', json_data=json_data)
+
+        #TODO: checker now works on dataframe not dictionary
+        errors = check_global_attributes(logged_attributes)
+        if errors:
+            for error in errors:
+                flash(error, category='error')
+
+            return render_template('global_attributes.html', json_data=json_data)
+
+        else:
+            # TODO: proceed to next page, preview of netCDF file
+            flash('Success!', category='success')
+            return render_template('global_attributes.html', json_data=json_data)
+
     #TODO: Placeholder for history?
-    #TODO: requirements for time_coverage_start and time_coverage_end?
     #TODO: keywords from vocabulary to drop-down?
+    #TODO: Play around with session parameters that should be there until the user closes their browser
 
-    return render_template('global_attributes.html', rows = df_metadata.iterrows())
+    return render_template('global_attributes.html', json_data=json_data)
 
 
 if __name__ == '__main__':

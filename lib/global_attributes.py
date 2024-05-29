@@ -8,6 +8,7 @@ Created on Tue Dec 13 08:53:13 2022
 
 import pandas as pd
 import numpy as np
+from lib.utils import validate_time_format
 
 class Global_attributes_df():
     '''
@@ -17,14 +18,15 @@ class Global_attributes_df():
     So the CSV overwrites each time the script runs if online
     '''
 
-    def __init__(self):
+    def __init__(self, filepath='config/global_attributes_copy.csv'):
         """
         Parameters
         ----------
-        filename: string
-            The name of the json file to be written
+        filepath: string
+            Location of the global attributes file
         """
-        self.filename = 'config/global_attributes.csv'
+        self.template_filepath = 'config/global_attributes.csv'
+        self.filepath = filepath
 
 
     def pull_from_online(self):
@@ -67,11 +69,11 @@ class Global_attributes_df():
         self.df['max'] = np.nan
         self.df['format'] = 'text'
         self.df['choices'] = None
-        self.df['placeholder'] = ''
+        self.df['value'] = ''
 
-        self.df.loc[self.df['Attribute'] == 'license', 'placeholder'] = 'https://creativecommons.org/licenses/by/4.0/'
-        self.df.loc[self.df['Attribute'] == 'Conventions', 'placeholder'] = 'CF-1.8, ACDD-1.3'
-        self.df.loc[self.df['Attribute'] == 'operational_status', 'placeholder'] = 'Scientific'
+        self.df.loc[self.df['Attribute'] == 'license', 'value'] = 'https://creativecommons.org/licenses/by/4.0/'
+        self.df.loc[self.df['Attribute'] == 'Conventions', 'value'] = 'CF-1.8, ACDD-1.3'
+        self.df.loc[self.df['Attribute'] == 'operational_status', 'value'] = 'Scientific'
         self.df.loc[self.df['Attribute'] == 'operational_status', 'choices'] = 'Operational; Pre-Operational; Experimental; Scientific; Not available'
 
         self.df.loc[self.df['Attribute'] == 'iso_topic_category', 'choices'] = 'farming; biota; boundaries; climatologyMeteorologyAtmosphere; economy; elevation; environment; geoscientificInformation; health; imageryBaseMapsEarthCover; intelligenceMilitary; inlandWaters; location; oceans; planningCadastre; soceity; structure; transportation; utilitiesCommunications; Not available'
@@ -107,12 +109,80 @@ class Global_attributes_df():
     def output_to_csv(self):
         '''
         '''
-        self.df.to_csv(self.filename, index=False)
+        self.df.to_csv(self.template_filepath, index=False)
 
     def read_csv(self):
         '''
         '''
-        self.df = pd.read_csv(self.filename, index_col=False)
+        self.df = pd.read_csv(self.filepath, index_col=False)
+
+    def check(self):
+        '''
+        Check the values that the user has provided for the global attributes
+        '''
+        # List of errors that will be appended to throughout this function.
+        # If there are any errors, no CF-NetCDF file will be created
+        errors = []
+
+        # List of warnings that will be appended to throughout this function
+        # Warnings will be flagged to the user but this alone will not stop a CF-NetCDF file from being created
+        warnings = []
+
+        # Attributes derived during the code that the user does not need to provide
+        derived_attributes = [
+            'date_created',
+            'history',
+            'geospatial_lat_min',
+            'geospatial_lat_max',
+            'geospatial_lon_min',
+            'geospatial_lon_max',
+        ]
+
+        for _, row in self.df.iterrows():
+            attribute = row['Attribute']
+            value = row['value']
+            requirement = row['Requirement']
+
+            if value in ['nan', np.nan, None, '']:
+                if requirement == 'Required' and attribute not in derived_attributes:
+                    errors.append(f'"{attribute}" is a required global attribute. Please provide a value')
+                else:
+                    pass
+            else:
+                if attribute in ['time_coverage_start', 'time_coverage_end', 'date_created']:
+                    if validate_time_format(value) == False:
+                        errors.append(f'{attribute} must be in the format YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSZ')
+
+                if attribute in ['geospatial_lat_min', 'geospatial_lat_max']:
+                    if -90 <= float(value) <= 90:
+                        pass
+                    else:
+                        errors.append(f'{attribute} must be between -90 and 90 inclusive')
+
+                if attribute in ['geospatial_lon_min', 'geospatial_lon_max']:
+                    if -180 <= float(value) <= 180:
+                        pass
+                    else:
+                        errors.append(f'{attribute} must be between -180 and 180 inclusive')
+
+        geospatial_lat_min = self.df.loc[self.df['Attribute'] == 'geospatial_lat_min', 'value'].values[0]
+        geospatial_lat_max = self.df.loc[self.df['Attribute'] == 'geospatial_lat_max', 'value'].values[0]
+        geospatial_lon_min = self.df.loc[self.df['Attribute'] == 'geospatial_lon_min', 'value'].values[0]
+        geospatial_lon_max = self.df.loc[self.df['Attribute'] == 'geospatial_lon_max', 'value'].values[0]
+        time_coverage_start = self.df.loc[self.df['Attribute'] == 'time_coverage_start', 'value'].values[0]
+        time_coverage_end = self.df.loc[self.df['Attribute'] == 'time_coverage_end', 'value'].values[0]
+
+        if geospatial_lat_min > geospatial_lat_max:
+            errors.append('geospatial_lat_max must be greater than or equal to geospatial_lat_min')
+
+        if geospatial_lon_min > geospatial_lon_max:
+            errors.append('geospatial_lon_max must be greater than or equal to geospatial_lon_min')
+
+        if time_coverage_start > time_coverage_end:
+            errors.append('time_coverage_end must be greater than or equal to time_coverage_start')
+
+        return errors, warnings
+
 
 def global_attributes_update():
     errors = []
@@ -138,8 +208,3 @@ def global_attributes_update():
         errors.append("Could not update. Couldn't save the CSV file.")
         return errors
     return errors
-
-def global_attributes_to_df():
-    global_attributes = Global_attributes_df()
-    global_attributes.read_csv()
-    return global_attributes.df

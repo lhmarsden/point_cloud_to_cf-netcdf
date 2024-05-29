@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import netCDF4 as nc
 from datetime import datetime
+import numpy as np
 
 
 class NetCDF:
@@ -54,10 +55,23 @@ class NetCDF:
         self.ncfile.setncattr('history', f'{current_timestamp}: File created using netCDF4 using Python.')
 
     def assign_global_attributes_from_user(self,global_attributes):
-        for attribute, value in global_attributes.items():
-            print(attribute, value)
-            if attribute not in self.ncfile.ncattrs() and value:
-                self.ncfile.setncattr(attribute, value)
+        # TODO: global attributes are not always strings. Values must be written in the appropriate format.
+        # TODO: Handle attributes that haven't been written. Checker?
+        # for attribute, value in global_attributes.items():
+        #    if attribute not in self.ncfile.ncattrs() and value:
+        #         self.ncfile.setncattr(attribute, value)
+        for idx, row in global_attributes.df.iterrows():
+            attribute = row['Attribute']
+            value = row['value']
+            format = row['format']
+            if attribute not in self.ncfile.ncattrs() and value not in [np.nan, '', 'None', None, 'nan']:
+                if format == 'string':
+                    self.ncfile.setncattr_string(attribute, value)
+                elif format == 'number':
+                    value = float(value)
+                    self.ncfile.setncattr(attribute, value)
+                else:
+                    self.ncfile.setncattr(attribute, value)
 
     def close(self):
         # Close the file
