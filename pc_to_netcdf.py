@@ -34,12 +34,15 @@ def main():
     # Read a CSV file into a pandas DataFrame
 
     # Read a PLY file into a pandas DataFrame
-    df = data_to_df(args.input_filepath)
+    df, data_errors, data_warnings = data_to_df(args.input_filepath)
 
     # Read the global attributes from the specified CSV file
     global_attributes = Global_attributes_df(args.attributes_filepath)
     global_attributes.read_csv()
-    errors, warnings = global_attributes.check()
+    ga_errors, ga_warnings = global_attributes.check()
+
+    errors = data_errors + ga_errors
+    warnings = data_warnings + ga_warnings
 
     if len(warnings) > 0:
         print('\nWarnings\nWe recommend that these are fixed, but you can choose to ignore them:\n')

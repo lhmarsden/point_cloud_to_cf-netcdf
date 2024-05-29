@@ -76,4 +76,6 @@ def data_to_df(filepath):
         print(f"Unsupported file format: {filepath}")
         sys.exit()
 
-    errors, warnings, df = update_headers(df)
+    df = update_headers(df)
+
+    return df, errors, warnings

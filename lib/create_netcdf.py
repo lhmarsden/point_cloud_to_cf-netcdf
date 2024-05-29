@@ -15,29 +15,96 @@ class NetCDF:
         # Define a single dimension as an arbtrary counter for the points
         self.ncfile.createDimension('point', size=num_points)
 
-        # Initialise the variables
-        longitude = self.ncfile.createVariable('longitude', 'f4', ('point',))
-        latitude = self.ncfile.createVariable('latitude', 'f4', ('point',))
-        altitude = self.ncfile.createVariable('altitude', 'f4', ('point',))
+        # Check and initialise the longitude variable
+        if 'longitude' in df.columns:
+            longitude = self.ncfile.createVariable('longitude', 'f4', ('point',))
+            # Add values to the longitude variable
+            longitude[:] = df['longitude']
+            # Assign longitude variable attributes
+            longitude.setncattr('units', 'degrees_east')
+            longitude.setncattr('long_name', 'longitude')
+            longitude.setncattr('standard_name', 'longitude')
+            longitude.setncattr('axis', 'X')
+            longitude.setncattr('valid_range', [-180.0, 180.0])
 
-        # Add values to the variables
-        longitude[:] = df['longitude']
-        latitude[:] = df['latitude']
-        altitude[:] = df['altitude']
+        # Check and initialise the latitude variable
+        if 'latitude' in df.columns:
+            latitude = self.ncfile.createVariable('latitude', 'f4', ('point',))
+            # Add values to the latitude variable
+            latitude[:] = df['latitude']
+            # Assign latitude variable attributes
+            latitude.setncattr('units', 'degrees_north')
+            latitude.setncattr('long_name', 'latitude')
+            latitude.setncattr('standard_name', 'latitude')
+            latitude.setncattr('axis', 'Y')
+            latitude.setncattr('valid_range', [-90.0, 90.0])
 
-        # Assign variable attributes
-        longitude.setncattr('units', 'degrees_east')
-        longitude.setncattr('long_name', 'longitude')
-        longitude.setncattr('standard_name', 'longitude')
+        # Check and initialise the altitude variable
+        if 'altitude' in df.columns:
+            altitude = self.ncfile.createVariable('altitude', 'f4', ('point',))
+            # Add values to the altitude variable
+            altitude[:] = df['altitude']
+            # Assign altitude variable attributes
+            altitude.setncattr('units', 'meters')
+            altitude.setncattr('long_name', 'geometric height above geoid')
+            altitude.setncattr('standard_name', 'altitude')
+            altitude.setncattr('positive', 'up')
+            altitude.setncattr('axis', 'Z')
+            altitude.setncattr('valid_range', [-10000.0, 10000.0])
 
-        latitude.setncattr('units', 'degrees_north')
-        latitude.setncattr('long_name', 'latitude')
-        latitude.setncattr('standard_name', 'latitude')
+        # Check and initialise the x variable
+        if 'X' in df.columns:
+            x = self.ncfile.createVariable('X', 'f4', ('point',))
+            # Add values to the x variable
+            x[:] = df['X']
+            # Assign x variable attributes
+            x.setncattr('units', 'meters')
+            x.setncattr('long_name', 'X coordinate')
 
-        altitude.setncattr('units', 'meters')
-        altitude.setncattr('long_name', 'geometric height above geoid')
-        altitude.setncattr('standard_name', 'altitude')
-        altitude.setncattr('positive', 'up')
+        # Check and initialise the y variable
+        if 'Y' in df.columns:
+            y = self.ncfile.createVariable('Y', 'f4', ('point',))
+            # Add values to the y variable
+            y[:] = df['Y']
+            # Assign y variable attributes
+            y.setncattr('units', 'meters')
+            y.setncattr('long_name', 'Y coordinate')
+
+        # Check and initialise the z variable
+        if 'Z' in df.columns:
+            z = self.ncfile.createVariable('Z', 'f4', ('point',))
+            # Add values to the z variable
+            z[:] = df['Z']
+            # Assign z variable attributes
+            z.setncattr('units', 'meters')
+            z.setncattr('long_name', 'Z coordinate')
+
+        # Check and initialise the red variable
+        if 'red' in df.columns:
+            red = self.ncfile.createVariable('red', 'f4', ('point',))
+            # Add values to the red variable
+            red[:] = df['red']
+            # Assign red variable attributes
+            red.setncattr('units', '1')
+            red.setncattr('long_name', 'red channel')
+
+        # Check and initialise the green variable
+        if 'green' in df.columns:
+            green = self.ncfile.createVariable('green', 'f4', ('point',))
+            # Add values to the green variable
+            green[:] = df['green']
+            # Assign green variable attributes
+            green.setncattr('units', '1')
+            green.setncattr('long_name', 'green channel')
+
+        # Check and initialise the blue variable
+        if 'blue' in df.columns:
+            blue = self.ncfile.createVariable('blue', 'f4', ('point',))
+            # Add values to the blue variable
+            blue[:] = df['blue']
+            # Assign blue variable attributes
+            blue.setncattr('units', '1')
+            blue.setncattr('long_name', 'blue channel')
 
     def assign_global_attributes_from_data_or_code(self,df):
 
