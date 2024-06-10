@@ -35,7 +35,7 @@ def main():
     # TODO: add errors to loading in data
     data_errors = data_warnings = []
     ply_df = ply_to_df(args.ply_filepath)
-    wavelength_2d = read_hyspex(args.hdr_filepath)
+    wavelength_df = read_hyspex(args.hdr_filepath)
 
     # Read the global attributes from the specified CSV file
     global_attributes = Global_attributes_df(args.attributes_filepath)
@@ -56,7 +56,7 @@ def main():
         print('\nNo NetCDF file has been created. Please correct the errors and try again.')
     else:
         # Convert the DataFrame to a NetCDF file
-        create_netcdf(ply_df, wavelength_2d, args.output_filepath, global_attributes)
+        create_netcdf(ply_df, wavelength_df, args.output_filepath, global_attributes)
         print(f'File created: {args.output_filepath}')
     print('\n')
 

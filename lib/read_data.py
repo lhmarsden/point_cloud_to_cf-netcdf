@@ -78,7 +78,7 @@ def ply_to_df(ply_filepath):
 # Function to read Hyspex image and flatten it
 def read_hyspex(hdr_filepath):
     hdr = sp.envi.open(hdr_filepath)
-    wvl = hdr.bands.centers
+    wavelengths = hdr.bands.centers
     #rows, cols, bands = hdr.nrows, hdr.ncols, hdr.nbands
     #meta = hdr.metadata
 
@@ -86,5 +86,5 @@ def read_hyspex(hdr_filepath):
 
     spectral_data_flattened = spectral_data.reshape(-1, hdr.nbands) # Flatten the data
     #TODO: I would like to be more sure that I have row and column the correct way round
-    df = pd.DataFrame(spectral_data_flattened, columns=wvl)
+    df = pd.DataFrame(spectral_data_flattened, columns=wavelengths)
     return df
