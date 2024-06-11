@@ -3,6 +3,7 @@ import netCDF4 as nc
 from datetime import datetime
 import numpy as np
 import pyproj
+import yaml
 
 
 class NetCDF:
@@ -38,6 +39,21 @@ class NetCDF:
     def calculate_vertical_bounds(self, z_values):
         return np.min(z_values), np.max(z_values)
 
+    def define_grid_mapping(self, grid_mapping_config):
+        if grid_mapping_config:
+            # Read attributes from YAML file
+            with open(grid_mapping_config, 'r') as file:
+                grid_mapping_attrs = yaml.safe_load(file)
+
+            # Define grid mapping variable
+            crs = self.ncfile.createVariable('crs', 'i4')
+
+            # Set attributes from the YAML file
+            for attr, value in grid_mapping_attrs.items():
+                crs.setncattr(attr, value)
+        else:
+            pass
+
     def write_coordinate_variables(self, wavelength_df):
 
         num_points, num_bands = wavelength_df.shape
@@ -70,18 +86,6 @@ class NetCDF:
         num_points = len(ply_df)
 
         # TODO: check whether length of ply_df matches number of points from hyspex file
-
-        # Define grid mapping variable
-        crs = self.ncfile.createVariable('crs', 'i4')
-        crs.setncattr('grid_mapping_name', 'transverse_mercator')  # Example, adjust as needed
-        crs.setncattr('longitude_of_prime_meridian', 0.0)
-        crs.setncattr('semi_major_axis', 6378137.0)
-        crs.setncattr('inverse_flattening', 298.257223563)
-        crs.setncattr('latitude_of_projection_origin', 0.0)
-        crs.setncattr('longitude_of_central_meridian', -111.0)
-        crs.setncattr('false_easting', 500000.0)
-        crs.setncattr('false_northing', 0.0)
-        crs.setncattr('scale_factor_at_central_meridian', 0.9996)
 
         # Check and initialise the longitude variable
         if 'longitude' in ply_df.columns:
@@ -255,7 +259,7 @@ class NetCDF:
         self.ncfile.close()
 
 
-def create_netcdf(ply_df, wavelength_df, output_filepath, global_attributes):
+def create_netcdf(ply_df, wavelength_df, output_filepath, global_attributes, grid_mapping_config):
     '''
     ply_df : pandas dataframe with columns including latitude, longitude, z
     global_attributes : python dictionary of global attributes
@@ -263,6 +267,7 @@ def create_netcdf(ply_df, wavelength_df, output_filepath, global_attributes):
     '''
     netcdf = NetCDF(output_filepath)
     netcdf.write_coordinate_variables(wavelength_df)
+    netcdf.define_grid_mapping(grid_mapping_config)
     netcdf.write_1d_data(ply_df)
     netcdf.write_2d_data(wavelength_df)
     netcdf.assign_global_attributes_from_data_or_code(ply_df)

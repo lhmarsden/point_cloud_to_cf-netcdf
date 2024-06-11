@@ -9,9 +9,14 @@ def main():
     parser = argparse.ArgumentParser(description='Convert a point cloud file to a NetCDF file.')
     parser.add_argument('-hdr', '--hdr_filepath', type=str, help='Path to the input hdr file.')
     parser.add_argument('-ply', '--ply_filepath', type=str, help='Path to the input ply file.')
+    parser.add_argument('-gm', '--grid_mapping_config', type=str, default=None, help='Path to the grid mapping configuration yaml file.')
     parser.add_argument('--output_filepath', type=str, default=None, help='Path to the output NetCDF file. If not provided, defaults to a subfolder "output" in the git repo with the same name as the input CSV file but with .nc extension.')
     parser.add_argument('--attributes_filepath', type=str, help='Path to the CSV file containing global attributes.', default='config/global_attributes_copy.csv')
     args = parser.parse_args()
+
+    # TODO: Consider different setups for regular or irregular grid?
+    # TODO: Consider different setup for georeferenced data (lat and lon instead of grid mapping)
+    # If no grid mapping config provided, the ply needs to have lat and lon
 
     # Determine the output filepath
     if args.output_filepath is None:
@@ -56,7 +61,7 @@ def main():
         print('\nNo NetCDF file has been created. Please correct the errors and try again.')
     else:
         # Convert the DataFrame to a NetCDF file
-        create_netcdf(ply_df, wavelength_df, args.output_filepath, global_attributes)
+        create_netcdf(ply_df, wavelength_df, args.output_filepath, global_attributes, args.grid_mapping_config)
         print(f'File created: {args.output_filepath}')
     print('\n')
 
