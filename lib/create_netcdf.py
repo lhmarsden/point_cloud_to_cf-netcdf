@@ -196,6 +196,32 @@ class NetCDF:
             blue.setncattr('long_name', 'blue channel')
             blue.setncattr('coverage_content_type', 'physicalMeasurement')
 
+        # Check and initialise the nomals
+        if 'nx' in ply_df.columns:
+            nx = self.ncfile.createVariable('nx', 'f4', ('point',))
+            # Add values to the red variable
+            nx[:] = ply_df['nx']
+            # Assign red variable attributes
+            nx.setncattr('units', '1')
+            nx.setncattr('long_name', 'terrain normal vector, x channel')
+            nx.setncattr('coverage_content_type', 'physicalMeasurement')
+        if 'ny' in ply_df.columns:
+            ny = self.ncfile.createVariable('ny', 'f4', ('point',))
+            # Add values to the red variable
+            ny[:] = ply_df['ny']
+            # Assign red variable attributes
+            ny.setncattr('units', '1')
+            ny.setncattr('long_name', 'terrain normal vector, y channel')
+            ny.setncattr('coverage_content_type', 'physicalMeasurement')
+        if 'nz' in ply_df.columns:
+            nz = self.ncfile.createVariable('nz', 'f4', ('point',))
+            # Add values to the red variable
+            nz[:] = ply_df['nz']
+            # Assign red variable attributes
+            nz.setncattr('units', '1')
+            nz.setncattr('long_name', 'terrain normal vector, z channel')
+            nz.setncattr('coverage_content_type', 'physicalMeasurement')
+
     def write_2d_data(self, wavelength_df):
 
         # Initialize the variable

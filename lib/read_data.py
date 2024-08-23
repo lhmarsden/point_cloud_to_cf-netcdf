@@ -5,6 +5,8 @@ import sys
 import yaml
 import spectral as sp
 import open3d as o3d
+from plyfile import PlyData
+from pyproj import Proj, Transformer
 
 # Load likely headers from YAML file
 with open('config/possible_headers.yml', 'r') as file:
@@ -63,17 +65,66 @@ with open('config/possible_headers.yml', 'r') as file:
 
 #     return df, errors, warnings
 
+def utm_to_latlon_bulk(x, y, zone=33, northern=True):
+    # Define the UTM projection string based on the given zone and hemisphere
+    utm_proj_str = f"+proj=utm +zone={zone} +datum=WGS84 +units=m +no_defs"
+    if northern:
+        utm_proj_str += " +north"
+
+    # Create a Transformer object for UTM to WGS84 conversion
+    transformer = Transformer.from_crs(utm_proj_str, "EPSG:4326", always_xy=True)
+
+    # Convert UTM (x, y) arrays to lat/lon arrays
+    lon, lat = transformer.transform(x, y)
+    return lat, lon
+
 def ply_to_df(ply_filepath):
+    # TODO: Need to be able to read latitude, longitude and altitude if they are present
+    # Issue: plyfile library can't read the file provided because of early end-of-file warnings (corrupted?)
+    # Issue: open3d is not able to read latitude and longitude directly as it does points, colors and normals
     # Read PLY file
     point_cloud = o3d.io.read_point_cloud(ply_filepath)
 
     # Convert to pandas DataFrame
-    df = pd.DataFrame(point_cloud.points, columns=["x", "y", "z"])
-    #df = pd.DataFrame(point_cloud.colors, columns=["red", "green", "blue"])
-    # if point_cloud.has_normals():
-    #     df = pd.DataFrame(point_cloud.normals, columns=["nx", "ny", "nz"])
+    points_df = pd.DataFrame(point_cloud.points, columns=["x", "y", "z"])
 
-    return df
+    # Initialize an empty list to hold the DataFrames
+    dataframes = [points_df]
+
+    # Check if colors and normals exist and append them to the list
+    if point_cloud.has_colors():
+        colors_df = pd.DataFrame(point_cloud.colors, columns=["red", "green", "blue"])
+        dataframes.append(colors_df)
+    if point_cloud.has_normals():
+        normals_df = pd.DataFrame(point_cloud.normals, columns=["nx", "ny", "nz"])
+        dataframes.append(normals_df)
+
+    # Use plyfile to manually extract velocities (vx, vy, vz)
+    try:
+        ply_data = PlyData.read(ply_filepath)
+        vertex_data = ply_data['vertex'].data
+
+        # Check if vx, vy, vz exist and extract them
+        if all(field in vertex_data.dtype.names for field in ['vx', 'vy', 'vz']):
+            vx = vertex_data['vx']
+            vy = vertex_data['vy']
+            vz = vertex_data['vz']
+            velocities_df = pd.DataFrame(np.column_stack((vx, vy, vz)), columns=["vx", "vy", "vz"])
+            dataframes.append(velocities_df)
+
+    except Exception as e:
+        print(f"Failed to extract velocities: {e}")
+
+
+    # Concatenate all DataFrames horizontally
+    combined_df = pd.concat(dataframes, axis=1)
+
+    # Calculate latitude and longitude using bulk transformation
+    lat, lon = utm_to_latlon_bulk(combined_df['x'].values, combined_df['y'].values)
+    combined_df['latitude'], combined_df['longitude'] = lat, lon
+    print(combined_df)
+
+    return combined_df
 
 # Function to read Hyspex image and flatten it
 def read_hyspex(hdr_filepath):
