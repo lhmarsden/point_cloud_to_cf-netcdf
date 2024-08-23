@@ -84,10 +84,12 @@ def get_ply_comment(plyfile):
 
         raise IOError("Didn't find end of header. This can't be a valid PLY file.")
 
-def parse_ply_comment(comment_str):
+def get_projection(ply_filepath=None):
     """
-    Get bbox and map projection from the comment string
+    Get map projection
     """
+    #TODO: Alternatively get from grid mapping file
+    comment_str = get_ply_comment(ply_filepath)
 
     # get projection string from the comment
     ind_crs = comment_str.find("utm_crs")
@@ -108,18 +110,12 @@ def utm_to_latlon(x, y, proj4str, crs="EPSG:4326"):
     lon, lat = transformer.transform(x, y)
     return lat, lon
 
-def ply_to_df(ply_filepath):
+def ply_to_df(ply_filepath, proj4str):
     # TODO: Need to be able to read latitude, longitude and altitude if they are present
     # Issue: plyfile library can't read the file provided because of early end-of-file warnings (corrupted?)
     # Issue: open3d is not able to read latitude and longitude directly as it does points, colors and normals
     # Read PLY file
     point_cloud = o3d.io.read_point_cloud(ply_filepath)
-
-    # Get projection and bbox from comment in header
-    # TODO: Figure out what to do if comment can't be read. This is free text.
-    # TODO: Perhaps alternatively read from grid_mapping.yml if available.
-    ply_comment = get_ply_comment(ply_filepath)
-    proj4str = parse_ply_comment(ply_comment)
 
     # Convert to pandas DataFrame
     points_df = pd.DataFrame(point_cloud.points, columns=["x", "y", "z"])
@@ -157,7 +153,6 @@ def ply_to_df(ply_filepath):
     # Calculate latitude and longitude using bulk transformation
     lat, lon = utm_to_latlon(combined_df['x'].values, combined_df['y'].values, proj4str)
     combined_df['latitude'], combined_df['longitude'] = lat, lon
-    print(combined_df)
 
     return combined_df
 

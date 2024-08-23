@@ -12,47 +12,25 @@ class NetCDF:
         self.output_filepath = output_filepath
         self.ncfile = nc.Dataset(self.output_filepath, mode='w', format='NETCDF4')
 
-    def transform_coordinates(self, x_values, y_values):
-        # TODO: transformation of longitude values is incorrect. Latitudes look okay based on one example
-        # TODO: could be an issue with the projection provided?
-        # Extract projection parameters from the 'crs' variable
-        projection_params = {
-            'proj': 'tmerc',
-            'lat_0': self.ncfile.variables['crs'].latitude_of_projection_origin,
-            'lon_0': self.ncfile.variables['crs'].longitude_of_central_meridian,
-            'k_0': self.ncfile.variables['crs'].scale_factor_at_central_meridian,
-            'x_0': self.ncfile.variables['crs'].false_easting,
-            'y_0': self.ncfile.variables['crs'].false_northing,
-            'ellps': 'WGS84'  # Assuming WGS84 ellipsoid, adjust if needed
-        }
-
-        # Define the projection using the extracted parameters
-        proj = pyproj.Transformer.from_proj(
-            pyproj.Proj(**projection_params),
-            pyproj.Proj(proj='latlong'),
-        )
-
-        # Transform coordinates
-        lon, lat = proj.transform(x_values, y_values)
-        return lon, lat
 
     def calculate_vertical_bounds(self, z_values):
         return np.min(z_values), np.max(z_values)
 
-    def define_grid_mapping(self, grid_mapping_config):
-        if grid_mapping_config:
-            # Read attributes from YAML file
-            with open(grid_mapping_config, 'r') as file:
-                grid_mapping_attrs = yaml.safe_load(file)
+    def define_grid_mapping(self, proj4str):
+        # TODO: Define this from the comment in the proj4str
+        crs = self.ncfile.createVariable('crs', 'i4')
 
-            # Define grid mapping variable
-            crs = self.ncfile.createVariable('crs', 'i4')
+        # Central Meridian=6×Zone Number−183
+        #crs.setncattr(attr, value)
+        '''
+        Required attributes
+        scale_factor_at_central_meridian
+        longitude_of_central_meridian
+        latitude_of_projection_origin - For UTM projections, especially in the northern hemisphere, this is usually 0°.
+        The scale factor at the central meridian for UTM projections is typically 0.9996.
+        '''
 
-            # Set attributes from the YAML file
-            for attr, value in grid_mapping_attrs.items():
-                crs.setncattr(attr, value)
-        else:
-            pass
+
 
     def write_coordinate_variables(self, wavelength_df):
 
@@ -175,6 +153,8 @@ class NetCDF:
             red.setncattr('units', '1')
             red.setncattr('long_name', 'red channel')
             red.setncattr('coverage_content_type', 'physicalMeasurement')
+            if 'latitude' in ply_df.columns and 'longitude' in ply_df.columns:
+                red.setncattr('coordinates', 'latitude longitude')
 
         # Check and initialise the green variable
         if 'green' in ply_df.columns:
@@ -185,6 +165,8 @@ class NetCDF:
             green.setncattr('units', '1')
             green.setncattr('long_name', 'green channel')
             green.setncattr('coverage_content_type', 'physicalMeasurement')
+            if 'latitude' in ply_df.columns and 'longitude' in ply_df.columns:
+                green.setncattr('coordinates', 'latitude longitude')
 
         # Check and initialise the blue variable
         if 'blue' in ply_df.columns:
@@ -195,32 +177,35 @@ class NetCDF:
             blue.setncattr('units', '1')
             blue.setncattr('long_name', 'blue channel')
             blue.setncattr('coverage_content_type', 'physicalMeasurement')
+            if 'latitude' in ply_df.columns and 'longitude' in ply_df.columns:
+                blue.setncattr('coordinates', 'latitude longitude')
 
         # Check and initialise the nomals
-        if 'nx' in ply_df.columns:
+        # TODO: Check whether these should be written to the NetCDF file
+        """ if 'nx' in ply_df.columns:
             nx = self.ncfile.createVariable('nx', 'f4', ('point',))
-            # Add values to the red variable
             nx[:] = ply_df['nx']
-            # Assign red variable attributes
             nx.setncattr('units', '1')
             nx.setncattr('long_name', 'terrain normal vector, x channel')
             nx.setncattr('coverage_content_type', 'physicalMeasurement')
+            if 'latitude' in ply_df.columns and 'longitude' in ply_df.columns:
+                nx.setncattr('coordinates', 'latitude longitude')
         if 'ny' in ply_df.columns:
             ny = self.ncfile.createVariable('ny', 'f4', ('point',))
-            # Add values to the red variable
             ny[:] = ply_df['ny']
-            # Assign red variable attributes
             ny.setncattr('units', '1')
             ny.setncattr('long_name', 'terrain normal vector, y channel')
             ny.setncattr('coverage_content_type', 'physicalMeasurement')
+            if 'latitude' in ply_df.columns and 'longitude' in ply_df.columns:
+                ny.setncattr('coordinates', 'latitude longitude')
         if 'nz' in ply_df.columns:
             nz = self.ncfile.createVariable('nz', 'f4', ('point',))
-            # Add values to the red variable
             nz[:] = ply_df['nz']
-            # Assign red variable attributes
             nz.setncattr('units', '1')
             nz.setncattr('long_name', 'terrain normal vector, z channel')
             nz.setncattr('coverage_content_type', 'physicalMeasurement')
+            if 'latitude' in ply_df.columns and 'longitude' in ply_df.columns:
+                nz.setncattr('coordinates', 'latitude longitude') """
 
     def write_2d_data(self, wavelength_df):
 
@@ -236,20 +221,18 @@ class NetCDF:
         intensity.setncattr('standard_name', 'toa_outgoing_radiance_per_unit_wavelength')
         intensity.setncattr('coverage_content_type', 'physicalMeasurement')
 
+        if 'latitude' in self.ncfile.variables and 'longitude' in self.ncfile.variables:
+            intensity.setncattr('coordinates', 'latitude longitude')
+
     def assign_global_attributes_from_data_or_code(self,ply_df):
 
-        x_values = self.ncfile.variables['X'][:]
-        y_values = self.ncfile.variables['Y'][:]
         z_values = self.ncfile.variables['Z'][:]
 
-        # Transform coordinates
-        lon_values, lat_values = self.transform_coordinates(x_values, y_values)
-
         # Derive bounding box for coordinates based on data
-        self.ncfile.setncattr('geospatial_lat_min', np.min(lat_values))
-        self.ncfile.setncattr('geospatial_lat_max', np.max(lat_values))
-        self.ncfile.setncattr('geospatial_lon_min', np.min(lon_values))
-        self.ncfile.setncattr('geospatial_lon_max', np.max(lon_values))
+        self.ncfile.setncattr('geospatial_lat_min', ply_df['latitude'].min())
+        self.ncfile.setncattr('geospatial_lat_max', ply_df['latitude'].max())
+        self.ncfile.setncattr('geospatial_lon_min', ply_df['longitude'].min())
+        self.ncfile.setncattr('geospatial_lon_max', ply_df['longitude'].max())
 
         # Calculate vertical bounds
         vertical_min, vertical_max = self.calculate_vertical_bounds(z_values)
@@ -285,7 +268,7 @@ class NetCDF:
         self.ncfile.close()
 
 
-def create_netcdf(ply_df, wavelength_df, output_filepath, global_attributes, grid_mapping_config):
+def create_netcdf(ply_df, wavelength_df, output_filepath, global_attributes, proj4str):
     '''
     ply_df : pandas dataframe with columns including latitude, longitude, z
     global_attributes : python dictionary of global attributes
@@ -293,7 +276,7 @@ def create_netcdf(ply_df, wavelength_df, output_filepath, global_attributes, gri
     '''
     netcdf = NetCDF(output_filepath)
     netcdf.write_coordinate_variables(wavelength_df)
-    netcdf.define_grid_mapping(grid_mapping_config)
+    netcdf.define_grid_mapping(proj4str)
     netcdf.write_1d_data(ply_df)
     netcdf.write_2d_data(wavelength_df)
     netcdf.assign_global_attributes_from_data_or_code(ply_df)

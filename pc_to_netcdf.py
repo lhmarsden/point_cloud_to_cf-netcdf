@@ -1,5 +1,5 @@
 import os
-from lib.read_data import read_hyspex, ply_to_df
+from lib.read_data import read_hyspex, ply_to_df, get_projection
 from lib.create_netcdf import create_netcdf
 from lib.global_attributes import Global_attributes_df
 import argparse
@@ -33,7 +33,10 @@ def main():
     # Read the PLY file into a pandas DataFrame
     data_errors = []
     data_warnings = []
-    ply_df = ply_to_df(args.ply_filepath)
+
+    #TODO: Alternatively get this from args.grid_mapping_config which should be first choice
+    proj4str = get_projection(ply_filepath=args.ply_filepath)
+    ply_df = ply_to_df(args.ply_filepath, proj4str)
     wavelength_df = read_hyspex(args.hdr_filepath)
 
     # Check if grid mapping config is provided
@@ -62,7 +65,7 @@ def main():
         print('\nNo NetCDF file has been created. Please correct the errors and try again.')
     else:
         # Convert the DataFrame to a NetCDF file
-        create_netcdf(ply_df, wavelength_df, args.output_filepath, global_attributes, args.grid_mapping_config)
+        create_netcdf(ply_df, wavelength_df, args.output_filepath, global_attributes, proj4str)
         print(f'File created: {args.output_filepath}')
     print('\n')
 
