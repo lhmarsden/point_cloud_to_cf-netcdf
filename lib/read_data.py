@@ -65,14 +65,44 @@ with open('config/possible_headers.yml', 'r') as file:
 
 #     return df, errors, warnings
 
-def utm_to_latlon_bulk(x, y, zone=33, northern=True):
-    # Define the UTM projection string based on the given zone and hemisphere
-    utm_proj_str = f"+proj=utm +zone={zone} +datum=WGS84 +units=m +no_defs"
-    if northern:
-        utm_proj_str += " +north"
+def get_ply_comment(plyfile):
+    """
+    Get the ply file comment string
+    """
+    with open(plyfile, 'rb') as fd:
+        for line in fd:
+            # Decode the line to a string
+            decoded_line = line.decode('utf-8').strip()
+
+            # Check if the line starts with 'comment'
+            if decoded_line.startswith("comment"):
+                return decoded_line
+
+            # Check if the line indicates the end of the header
+            elif decoded_line.startswith("end_header"):
+                return None
+
+        raise IOError("Didn't find end of header. This can't be a valid PLY file.")
+
+def parse_ply_comment(comment_str):
+    """
+    Get bbox and map projection from the comment string
+    """
+
+    # get projection string from the comment
+    ind_crs = comment_str.find("utm_crs")
+    if ind_crs == -1:
+        raise IOError("Projection is not specified in the ply file comment")
+
+    proj4str = comment_str[ind_crs:].split(";")[0].split("utm_crs")[1]
+    proj4str = proj4str[proj4str.find("=")+1:]
+
+    return proj4str
+
+def utm_to_latlon(x, y, proj4str, crs="EPSG:4326"):
 
     # Create a Transformer object for UTM to WGS84 conversion
-    transformer = Transformer.from_crs(utm_proj_str, "EPSG:4326", always_xy=True)
+    transformer = Transformer.from_crs(proj4str, crs, always_xy=True)
 
     # Convert UTM (x, y) arrays to lat/lon arrays
     lon, lat = transformer.transform(x, y)
@@ -84,6 +114,12 @@ def ply_to_df(ply_filepath):
     # Issue: open3d is not able to read latitude and longitude directly as it does points, colors and normals
     # Read PLY file
     point_cloud = o3d.io.read_point_cloud(ply_filepath)
+
+    # Get projection and bbox from comment in header
+    # TODO: Figure out what to do if comment can't be read. This is free text.
+    # TODO: Perhaps alternatively read from grid_mapping.yml if available.
+    ply_comment = get_ply_comment(ply_filepath)
+    proj4str = parse_ply_comment(ply_comment)
 
     # Convert to pandas DataFrame
     points_df = pd.DataFrame(point_cloud.points, columns=["x", "y", "z"])
@@ -115,12 +151,11 @@ def ply_to_df(ply_filepath):
     except Exception as e:
         print(f"Failed to extract velocities: {e}")
 
-
     # Concatenate all DataFrames horizontally
     combined_df = pd.concat(dataframes, axis=1)
 
     # Calculate latitude and longitude using bulk transformation
-    lat, lon = utm_to_latlon_bulk(combined_df['x'].values, combined_df['y'].values)
+    lat, lon = utm_to_latlon(combined_df['x'].values, combined_df['y'].values, proj4str)
     combined_df['latitude'], combined_df['longitude'] = lat, lon
     print(combined_df)
 
