@@ -12,25 +12,17 @@ class NetCDF:
         self.output_filepath = output_filepath
         self.ncfile = nc.Dataset(self.output_filepath, mode='w', format='NETCDF4')
 
-
     def calculate_vertical_bounds(self, z_values):
         return np.min(z_values), np.max(z_values)
 
-    def define_grid_mapping(self, proj4str):
-        # TODO: Define this from the comment in the proj4str
+    def define_grid_mapping(self, cf_grid_mapping):
+        '''
+        Write the CRS variable with the projection
+        '''
         crs = self.ncfile.createVariable('crs', 'i4')
 
-        # Central Meridian=6×Zone Number−183
-        #crs.setncattr(attr, value)
-        '''
-        Required attributes
-        scale_factor_at_central_meridian
-        longitude_of_central_meridian
-        latitude_of_projection_origin - For UTM projections, especially in the northern hemisphere, this is usually 0°.
-        The scale factor at the central meridian for UTM projections is typically 0.9996.
-        '''
-
-
+        for attr, value in cf_grid_mapping.items():
+            crs.setncattr(attr, value)
 
     def write_coordinate_variables(self, wavelength_df):
 
@@ -268,15 +260,16 @@ class NetCDF:
         self.ncfile.close()
 
 
-def create_netcdf(ply_df, wavelength_df, output_filepath, global_attributes, proj4str):
+def create_netcdf(ply_df, wavelength_df, output_filepath, global_attributes, cf_grid_mapping):
     '''
     ply_df : pandas dataframe with columns including latitude, longitude, z
     global_attributes : python dictionary of global attributes
     output_filepath: where to write the netcdf file
+    cf_grid_mapping: Python dictionary of the key value pairs for the variable attributes of the CRS variable.
     '''
     netcdf = NetCDF(output_filepath)
     netcdf.write_coordinate_variables(wavelength_df)
-    netcdf.define_grid_mapping(proj4str)
+    netcdf.define_grid_mapping(cf_grid_mapping)
     netcdf.write_1d_data(ply_df)
     netcdf.write_2d_data(wavelength_df)
     netcdf.assign_global_attributes_from_data_or_code(ply_df)

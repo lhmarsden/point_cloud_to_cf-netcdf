@@ -6,64 +6,11 @@ import yaml
 import spectral as sp
 import open3d as o3d
 from plyfile import PlyData
-from pyproj import Proj, Transformer
+from pyproj import Proj, Transformer, CRS
 
 # Load likely headers from YAML file
 with open('config/possible_headers.yml', 'r') as file:
     likely_headers = yaml.safe_load(file)
-
-# # Not all of these are required
-# def ascii_to_df(filepath, header_row, data_start_row):
-
-#     gap = data_start_row-(header_row+1)
-#     if header_row == 0:
-#         df = pd.read_csv(filepath, header=None, skiprows=data_start_row-header_row)
-#     elif gap == 0:
-#         df = pd.read_csv(filepath, header=header_row-1)
-#     else:
-#         df = pd.read_csv(filepath, header=header_row, skiprows=data_start_row-(header_row+1))
-#     return df
-
-# def update_headers(df):
-#     '''
-#     Updating the column headers to a standard set of column headers that can be
-#     understood and processed by the rest of the program.
-#     '''
-#     # TODO: what should we do about unrecognized column headers?
-#     # Option 1: write them to the netcdf file unprocessed? What about the long name and units?
-#     # Option 2: ignore them and don't write them to the netcdf file. return a warning
-#     # Option 3: return an error and the netcdf file won't be written
-#     # Option 4: ask the user (prompt) what to do?
-#     for target_name, headers in likely_headers.items():
-#         for header in headers:
-#             if header.lower() in df.columns.str.lower():
-#                 target_col = df.columns[df.columns.str.lower() == header.lower()][0]
-#                 df.rename(columns={target_col: target_name}, inplace=True)
-#                 break
-#     return df
-
-# def data_to_df(filepath):
-
-#     errors = []
-#     warnings = []
-
-#     file_name, file_extension = os.path.splitext(filepath)
-#     if file_extension.lower() in ['.csv', '.ascii', '.txt']:
-#         # Do something for CSV, ASCII, or TXT files
-#         print(f"Processing {file_extension} file: {filepath}")
-#         df = ascii_to_df(filepath)
-#     elif file_extension.lower() == '.ply':
-#         # Do something for PLY files
-#         print("Processing PLY file:", filepath)
-#         df = ply_to_df(filepath)
-#     else:
-#         # Handle other file extensions
-#         print(f"Unsupported file format: {filepath}")
-#         sys.exit()
-
-#     df = update_headers(df)
-
-#     return df, errors, warnings
 
 def get_ply_comment(plyfile):
     """
@@ -84,11 +31,14 @@ def get_ply_comment(plyfile):
 
         raise IOError("Didn't find end of header. This can't be a valid PLY file.")
 
-def get_projection(ply_filepath=None):
+
+def get_cf_grid_mapping(ply_filepath):
     """
-    Get map projection
+    Get cf_grid_mapping
     """
-    #TODO: Alternatively get from grid mapping file
+    # TODO: Add control if doesn't work.
+    # For example if config file or comment are erroneous
+
     comment_str = get_ply_comment(ply_filepath)
 
     # get projection string from the comment
@@ -98,19 +48,23 @@ def get_projection(ply_filepath=None):
 
     proj4str = comment_str[ind_crs:].split(";")[0].split("utm_crs")[1]
     proj4str = proj4str[proj4str.find("=")+1:]
+    crs = CRS.from_proj4(proj4str)
+    cf_grid_mapping = crs.to_cf()
+    return cf_grid_mapping
 
-    return proj4str
 
-def utm_to_latlon(x, y, proj4str, crs="EPSG:4326"):
+def utm_to_latlon(x, y, cf_grid_mapping):
+
+    crs = CRS.from_cf(cf_grid_mapping)
 
     # Create a Transformer object for UTM to WGS84 conversion
-    transformer = Transformer.from_crs(proj4str, crs, always_xy=True)
+    transformer = Transformer.from_crs(crs, CRS.from_epsg(4326), always_xy=True)
 
     # Convert UTM (x, y) arrays to lat/lon arrays
     lon, lat = transformer.transform(x, y)
     return lat, lon
 
-def ply_to_df(ply_filepath, proj4str):
+def ply_to_df(ply_filepath, cf_grid_mapping):
     # TODO: Need to be able to read latitude, longitude and altitude if they are present
     # Issue: plyfile library can't read the file provided because of early end-of-file warnings (corrupted?)
     # Issue: open3d is not able to read latitude and longitude directly as it does points, colors and normals
@@ -151,7 +105,7 @@ def ply_to_df(ply_filepath, proj4str):
     combined_df = pd.concat(dataframes, axis=1)
 
     # Calculate latitude and longitude using bulk transformation
-    lat, lon = utm_to_latlon(combined_df['x'].values, combined_df['y'].values, proj4str)
+    lat, lon = utm_to_latlon(combined_df['x'].values, combined_df['y'].values, cf_grid_mapping)
     combined_df['latitude'], combined_df['longitude'] = lat, lon
 
     return combined_df
@@ -160,8 +114,6 @@ def ply_to_df(ply_filepath, proj4str):
 def read_hyspex(hdr_filepath):
     hdr = sp.envi.open(hdr_filepath)
     wavelengths = hdr.bands.centers
-    #rows, cols, bands = hdr.nrows, hdr.ncols, hdr.nbands
-    #meta = hdr.metadata
 
     spectral_data = hdr.load()
 
