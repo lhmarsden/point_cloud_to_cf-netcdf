@@ -8,9 +8,9 @@ import open3d as o3d
 from plyfile import PlyData
 from pyproj import Proj, Transformer, CRS
 
-# Load likely headers from YAML file
-with open('config/possible_headers.yml', 'r') as file:
-    likely_headers = yaml.safe_load(file)
+# # Load likely headers from YAML file
+# with open('config/possible_headers.yml', 'r') as file:
+#     likely_headers = yaml.safe_load(file)
 
 def get_ply_comment(plyfile):
     """
@@ -32,13 +32,11 @@ def get_ply_comment(plyfile):
         raise IOError("Didn't find end of header. This can't be a valid PLY file.")
 
 
-def get_cf_grid_mapping(ply_filepath):
+def get_cf_crs(ply_filepath):
     """
-    Get cf_grid_mapping
+    Get a dictionary of variable attributes to write to the CRS variable
+    From a PROJ.4 string in the comment in the PLY file header
     """
-    # TODO: Add control if doesn't work.
-    # For example if config file or comment are erroneous
-
     comment_str = get_ply_comment(ply_filepath)
 
     # get projection string from the comment
@@ -49,13 +47,13 @@ def get_cf_grid_mapping(ply_filepath):
     proj4str = comment_str[ind_crs:].split(";")[0].split("utm_crs")[1]
     proj4str = proj4str[proj4str.find("=")+1:]
     crs = CRS.from_proj4(proj4str)
-    cf_grid_mapping = crs.to_cf()
-    return cf_grid_mapping
+    cf_crs = crs.to_cf()
+    return cf_crs
 
 
-def utm_to_latlon(x, y, cf_grid_mapping):
+def utm_to_latlon(x, y, cf_crs):
 
-    crs = CRS.from_cf(cf_grid_mapping)
+    crs = CRS.from_cf(cf_crs)
 
     # Create a Transformer object for UTM to WGS84 conversion
     transformer = Transformer.from_crs(crs, CRS.from_epsg(4326), always_xy=True)
@@ -64,10 +62,11 @@ def utm_to_latlon(x, y, cf_grid_mapping):
     lon, lat = transformer.transform(x, y)
     return lat, lon
 
-def ply_to_df(ply_filepath, cf_grid_mapping):
+def ply_to_df(ply_filepath, cf_crs):
     # TODO: Need to be able to read latitude, longitude and altitude if they are present
     # Issue: plyfile library can't read the file provided because of early end-of-file warnings (corrupted?)
     # Issue: open3d is not able to read latitude and longitude directly as it does points, colors and normals
+    # Issue: velocities also not read
     # Read PLY file
     point_cloud = o3d.io.read_point_cloud(ply_filepath)
 
@@ -104,20 +103,22 @@ def ply_to_df(ply_filepath, cf_grid_mapping):
     # Concatenate all DataFrames horizontally
     combined_df = pd.concat(dataframes, axis=1)
 
-    # Calculate latitude and longitude using bulk transformation
-    lat, lon = utm_to_latlon(combined_df['x'].values, combined_df['y'].values, cf_grid_mapping)
-    combined_df['latitude'], combined_df['longitude'] = lat, lon
+    if not all(col in combined_df.columns for col in ['latitude', 'longitude']):
+        # Calculate latitude and longitude from X and Y and the CRS
+        lat, lon = utm_to_latlon(combined_df['x'].values, combined_df['y'].values, cf_crs)
+        combined_df['latitude'], combined_df['longitude'] = lat, lon
+    else:
+        pass
 
     return combined_df
 
-# Function to read Hyspex image and flatten it
 def read_hyspex(hdr_filepath):
+    # Function to read Hyspex image and flatten it to a pandas dataframe
     hdr = sp.envi.open(hdr_filepath)
     wavelengths = hdr.bands.centers
 
     spectral_data = hdr.load()
-
     spectral_data_flattened = spectral_data.reshape(-1, hdr.nbands) # Flatten the data
-    #TODO: I would like to be more sure that I have row and column the correct way round
+    # Columns: wavelengths, 1 row per point
     df = pd.DataFrame(spectral_data_flattened, columns=wavelengths)
     return df

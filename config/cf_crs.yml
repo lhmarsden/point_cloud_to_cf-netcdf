@@ -1,4 +1,5 @@
-# For information on which grid mapping attributes should be included,
+# Variable attributes to be encoded for the CRS variable (describes the projection)
+# For information on which variable attributes should be included,
 # please see this section of the CF conventions
 # https://cfconventions.org/Data/cf-conventions/cf-conventions-1.11/cf-conventions.html#appendix-grid-mappings
 grid_mapping_name: transverse_mercator

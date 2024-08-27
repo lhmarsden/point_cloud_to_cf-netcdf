@@ -44,8 +44,6 @@ class Global_attributes_df():
         tables = pd.read_html(url)
         df1 = tables[0]
         df2 = tables[1]
-        df2 = df2.set_axis(df2.iloc[0], axis=1)
-        df2 = df2[1:]
         self.df = pd.concat([df1, df2], ignore_index=True)
         self.df = self.df.dropna(how='all')
         self.df.reset_index(inplace=True, drop=True)
@@ -74,6 +72,7 @@ class Global_attributes_df():
         self.df.loc[self.df['Attribute'] == 'license', 'value'] = 'https://creativecommons.org/licenses/by/4.0/'
         self.df.loc[self.df['Attribute'] == 'Conventions', 'value'] = 'CF-1.8, ACDD-1.3'
         self.df.loc[self.df['Attribute'] == 'operational_status', 'value'] = 'Scientific'
+        self.df.loc[self.df['Attribute'] == 'featureType', 'value'] = 'point'
         self.df.loc[self.df['Attribute'] == 'operational_status', 'choices'] = 'Operational; Pre-Operational; Experimental; Scientific; Not available'
 
         self.df.loc[self.df['Attribute'] == 'iso_topic_category', 'choices'] = 'farming; biota; boundaries; climatologyMeteorologyAtmosphere; economy; elevation; environment; geoscientificInformation; health; imageryBaseMapsEarthCover; intelligenceMilitary; inlandWaters; location; oceans; planningCadastre; soceity; structure; transportation; utilitiesCommunications; Not available'
@@ -98,7 +97,6 @@ class Global_attributes_df():
             self.df.loc[self.df['Attribute'] == att, 'format'] = 'number'
 
         atts_to_remove = [
-            'featureType',
             'activity_type',
             'platform',
             'platform_vocabulary'

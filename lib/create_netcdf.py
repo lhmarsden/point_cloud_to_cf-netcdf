@@ -15,13 +15,13 @@ class NetCDF:
     def calculate_vertical_bounds(self, z_values):
         return np.min(z_values), np.max(z_values)
 
-    def define_grid_mapping(self, cf_grid_mapping):
+    def define_grid_mapping(self, cf_crs):
         '''
         Write the CRS variable with the projection
         '''
         crs = self.ncfile.createVariable('crs', 'i4')
 
-        for attr, value in cf_grid_mapping.items():
+        for attr, value in cf_crs.items():
             crs.setncattr(attr, value)
 
     def write_coordinate_variables(self, wavelength_df):
@@ -55,7 +55,7 @@ class NetCDF:
     def write_1d_data(self, ply_df):
         num_points = len(ply_df)
 
-        # TODO: check whether length of ply_df matches number of points from hyspex file
+        # TODO: check whether length of ply_df matches number of points from hyspex file?
 
         # Check and initialise the longitude variable
         if 'longitude' in ply_df.columns:
@@ -237,11 +237,6 @@ class NetCDF:
         self.ncfile.setncattr('history', f'{current_timestamp}: File created using netCDF4 using Python.')
 
     def assign_global_attributes_from_user(self,global_attributes):
-        # TODO: global attributes are not always strings. Values must be written in the appropriate format.
-        # TODO: Handle attributes that haven't been written. Checker?
-        # for attribute, value in global_attributes.items():
-        #    if attribute not in self.ncfile.ncattrs() and value:
-        #         self.ncfile.setncattr(attribute, value)
         for idx, row in global_attributes.df.iterrows():
             attribute = row['Attribute']
             value = row['value']
@@ -260,16 +255,16 @@ class NetCDF:
         self.ncfile.close()
 
 
-def create_netcdf(ply_df, wavelength_df, output_filepath, global_attributes, cf_grid_mapping):
+def create_netcdf(ply_df, wavelength_df, output_filepath, global_attributes, cf_crs):
     '''
     ply_df : pandas dataframe with columns including latitude, longitude, z
     global_attributes : python dictionary of global attributes
     output_filepath: where to write the netcdf file
-    cf_grid_mapping: Python dictionary of the key value pairs for the variable attributes of the CRS variable.
+    cf_crs: Python dictionary of the key value pairs for the variable attributes of the CRS variable.
     '''
     netcdf = NetCDF(output_filepath)
     netcdf.write_coordinate_variables(wavelength_df)
-    netcdf.define_grid_mapping(cf_grid_mapping)
+    netcdf.define_grid_mapping(cf_crs)
     netcdf.write_1d_data(ply_df)
     netcdf.write_2d_data(wavelength_df)
     netcdf.assign_global_attributes_from_data_or_code(ply_df)
