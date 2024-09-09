@@ -1,7 +1,8 @@
 tests/data/2020*
 *__pycache__*
 output/*
-config/global_attributes_*
+config/global_attributes_copy*
+config/global_attributes_Nataly*
 test_execute.sh
 plyfile_test.py
 private_notes.txt
