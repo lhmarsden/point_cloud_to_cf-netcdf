@@ -42,7 +42,7 @@ def get_cf_crs(ply_filepath):
     # get projection string from the comment
     ind_crs = comment_str.find("utm_crs")
     if ind_crs == -1:
-        raise IOError("Projection is not specified in the ply file comment")
+        return None
 
     proj4str = comment_str[ind_crs:].split(";")[0].split("utm_crs")[1]
     proj4str = proj4str[proj4str.find("=")+1:]
@@ -62,7 +62,7 @@ def utm_to_latlon(x, y, cf_crs):
     lon, lat = transformer.transform(x, y)
     return lat, lon
 
-def ply_to_df(ply_filepath, cf_crs):
+def ply_to_df(ply_filepath, cf_crs, xcoord=None, ycoord=None, zcoord=None):
     # TODO: Need to be able to read latitude, longitude and altitude if they are present
     # Issue: plyfile library can't read the file provided because of early end-of-file warnings (corrupted?)
     # Issue: open3d is not able to read latitude and longitude directly as it does points, colors and normals
@@ -73,7 +73,15 @@ def ply_to_df(ply_filepath, cf_crs):
     # Convert to pandas DataFrame
     points_df = pd.DataFrame(point_cloud.points, columns=["x", "y", "z"])
 
-    # Initialize an empty list to hold the DataFrames
+    # If X, Y and Z are equal to lat, lon, altitude
+    if xcoord:
+        points_df.rename(columns={'x': xcoord}, inplace=True)
+    if ycoord:
+        points_df.rename(columns={'y': ycoord}, inplace=True)
+    if zcoord:
+        points_df.rename(columns={'z': zcoord}, inplace=True)
+
+    # Initialize an list to hold the DataFrames
     dataframes = [points_df]
 
     # Check if colors and normals exist and append them to the list

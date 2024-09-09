@@ -4,3 +4,4 @@ output/*
 config/global_attributes_*
 test_execute.sh
 plyfile_test.py
+private_notes.txt

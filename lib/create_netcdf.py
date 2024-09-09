@@ -12,8 +12,8 @@ class NetCDF:
         self.output_filepath = output_filepath
         self.ncfile = nc.Dataset(self.output_filepath, mode='w', format='NETCDF4')
 
-    def calculate_vertical_bounds(self, z_values):
-        return np.min(z_values), np.max(z_values)
+    def calculate_vertical_bounds(self, altitude_values):
+        return np.min(altitude_values), np.max(altitude_values)
 
     def define_grid_mapping(self, cf_crs):
         '''
@@ -24,36 +24,39 @@ class NetCDF:
         for attr, value in cf_crs.items():
             crs.setncattr(attr, value)
 
-    def write_coordinate_variables(self, wavelength_df):
+    def write_coordinate_variables(self, ply_df, wavelength_df):
 
-        num_points, num_bands = wavelength_df.shape
-        wavelengths = wavelength_df.columns
+        if wavelength_df:
+            num_points, num_bands = wavelength_df.shape
+            wavelengths = wavelength_df.columns
+        else:
+            num_points = len(ply_df)
+            num_bands = None
+            wavelengths = None
 
         # Define a dimension as an arbitrary counter for the points
         self.ncfile.createDimension('point', size=num_points)
-        # Define a dimension for the wavelength bands
-        self.ncfile.createDimension('band', size=num_bands)
-
-        # Write coordinate variables
-        wavelength_var = self.ncfile.createVariable('band', 'f4', ('band',))
-        wavelength_var[:] = wavelengths
-
+        # Write coordinate variable
         point_var = self.ncfile.createVariable('point', 'f4', ('point',))
         point_var[:] = range(num_points)
-
         # Adding variable attributes
         point_var.setncattr('units', '1')
         point_var.setncattr('long_name', 'Arbitrary counter for number of points in the point cloud')
         point_var.setncattr('standard_name', 'number_of_observations')
         point_var.setncattr('coverage_content_type', 'coordinate')
 
-        wavelength_var.setncattr('units', 'nanometers')
-        wavelength_var.setncattr('long_name', 'Spectral band')
-        wavelength_var.setncattr('standard_name', 'radiation_wavelength')
-        wavelength_var.setncattr('coverage_content_type', 'coordinate')
+        if num_bands:
+            # Define a dimension and coordinate variable for the wavelength bands
+            self.ncfile.createDimension('band', size=num_bands)
+            wavelength_var = self.ncfile.createVariable('band', 'f4', ('band',))
+            wavelength_var[:] = wavelengths
+
+            wavelength_var.setncattr('units', 'nanometers')
+            wavelength_var.setncattr('long_name', 'Spectral band')
+            wavelength_var.setncattr('standard_name', 'radiation_wavelength')
+            wavelength_var.setncattr('coverage_content_type', 'coordinate')
 
     def write_1d_data(self, ply_df):
-        num_points = len(ply_df)
 
         # TODO: check whether length of ply_df matches number of points from hyspex file?
 
@@ -218,7 +221,7 @@ class NetCDF:
 
     def assign_global_attributes_from_data_or_code(self,ply_df):
 
-        z_values = self.ncfile.variables['Z'][:]
+        altitude_values = self.ncfile.variables['altitude'][:]
 
         # Derive bounding box for coordinates based on data
         self.ncfile.setncattr('geospatial_lat_min', ply_df['latitude'].min())
@@ -227,7 +230,7 @@ class NetCDF:
         self.ncfile.setncattr('geospatial_lon_max', ply_df['longitude'].max())
 
         # Calculate vertical bounds
-        vertical_min, vertical_max = self.calculate_vertical_bounds(z_values)
+        vertical_min, vertical_max = self.calculate_vertical_bounds(altitude_values)
         self.ncfile.setncattr('geospatial_vertical_min', vertical_min)
         self.ncfile.setncattr('geospatial_vertical_max', vertical_max)
 
@@ -258,15 +261,18 @@ class NetCDF:
 def create_netcdf(ply_df, wavelength_df, output_filepath, global_attributes, cf_crs):
     '''
     ply_df : pandas dataframe with columns including latitude, longitude, z
+    wavelength_df: frequency bands and intensity values. None if not provided.
     global_attributes : python dictionary of global attributes
     output_filepath: where to write the netcdf file
     cf_crs: Python dictionary of the key value pairs for the variable attributes of the CRS variable.
     '''
     netcdf = NetCDF(output_filepath)
-    netcdf.write_coordinate_variables(wavelength_df)
-    netcdf.define_grid_mapping(cf_crs)
+    netcdf.write_coordinate_variables(ply_df,wavelength_df)
+    if cf_crs:
+        netcdf.define_grid_mapping(cf_crs)
     netcdf.write_1d_data(ply_df)
-    netcdf.write_2d_data(wavelength_df)
+    if wavelength_df:
+        netcdf.write_2d_data(wavelength_df)
     netcdf.assign_global_attributes_from_data_or_code(ply_df)
     netcdf.assign_global_attributes_from_user(global_attributes)
     netcdf.close()
