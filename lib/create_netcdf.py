@@ -58,8 +58,6 @@ class NetCDF:
 
     def write_1d_data(self, ply_df):
 
-        # TODO: check whether length of ply_df matches number of points from hyspex file?
-
         # Check and initialise the longitude variable
         if 'longitude' in ply_df.columns:
             longitude = self.ncfile.createVariable('longitude', 'f4', ('point',))
