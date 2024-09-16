@@ -1,11 +1,12 @@
 import os
 from lib.read_data import read_hyspex, ply_to_df, get_cf_crs
 from lib.create_netcdf import create_netcdf
-from lib.global_attributes import Global_attributes_df
+from lib.global_attributes_dict import GlobalAttributes
 import argparse
 import yaml
 import sys
 import logging
+
 logger = logging.getLogger(__name__)
 
 def main():
@@ -24,7 +25,7 @@ def main():
     # Input files
     parser.add_argument('-ply', '--ply_filepath', type=str, required=True, help='Path to the input ply file.')
     parser.add_argument('-hdr', '--hdr_filepath', type=str, default=None, help='Path to the input hdr file.')
-    parser.add_argument('-attr', '--attributes_filepath', type=str, help='Path to the CSV file containing global attributes.', default='config/global_attributes_copy.csv')
+    parser.add_argument('-ga', '--global_attributes', type=str, help='Should be either 1) a JSON string with key/value pairs for global attributes, or 2) a yaml file including this information')
 
     # X, Y and Z must all be specified if one is present
     # Allowed values for X, Y, Z
@@ -127,10 +128,10 @@ def main():
             logger.error("Latitude and longitude columns could not be found/read")
 
     # Read the global attributes from the specified CSV file
-    logger.info("Reading in global attributes from a separate configuration file")
-    global_attributes = Global_attributes_df(args.attributes_filepath)
-    global_attributes.read_csv()
-    ga_errors, ga_warnings = global_attributes.check()
+    logger.info("Reading in global attributes")
+    global_attributes = GlobalAttributes()
+    global_attributes.read_global_attributes(args.global_attributes)
+    ga_errors, ga_warnings = [], []#global_attributes.check()
 
     errors = data_errors + ga_errors
     warnings = data_warnings + ga_warnings
@@ -146,7 +147,7 @@ def main():
         logger.error('\nNo NetCDF file has been created. Please correct the errors and try again.')
     else:
         # Convert the DataFrame to a NetCDF file
-        create_netcdf(ply_df, wavelength_df, args.output_filepath, global_attributes, cf_crs)
+        create_netcdf(ply_df, wavelength_df, args.output_filepath, global_attributes.dict, cf_crs)
         logger.info(f'File created: {args.output_filepath}')
 
 if __name__ == '__main__':

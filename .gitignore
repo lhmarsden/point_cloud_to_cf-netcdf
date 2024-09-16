@@ -1,4 +1,5 @@
 tests/data/2020*
+test.csv
 *__pycache__*
 output/*
 config/global_attributes_copy*

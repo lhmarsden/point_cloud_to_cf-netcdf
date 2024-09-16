@@ -20,9 +20,12 @@ def get_ply_comment(plyfile):
         for line in fd:
             # Decode the line to a string
             decoded_line = line.decode('utf-8').strip()
+            print('HERE')
+            print(decoded_line)
 
             # Check if the line starts with 'comment'
             if decoded_line.startswith("comment"):
+                print('comment found!!!')
                 return decoded_line
 
             # Check if the line indicates the end of the header
