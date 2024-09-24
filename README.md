@@ -28,19 +28,19 @@ python3 pc_to_netcdf.py -hdr /path/to/file.hdr -ply /path/to/file.ply
   - **Description:** Path to the input PLY file.
   - **Example:** `--ply_filepath /path/to/your/file.ply`
 
+- `-ga` / `--global_attributes` (str, required)
+  - **Description:** Specifies global attributes for the NetCDF file. Can be provided either as:
+    1. A JSON string containing key/value pairs for global attributes.
+    2. A path to a YAML file that includes the global attributes.
+  - **Example:** `--global_attributes '{"key1": "value1", "key2": "value2"}'` or `--global_attributes /path/to/global_attributes.yaml`
+  > Note: the geospatial limits, date_created, history, featureType and Conventions attributes are computed within the script and written automatically to the CF-NetCDF file. Including these attributes with overwrite the values computed within the script.
+
 ### Optional Arguments:
 
 - `-hdr` / `--hdr_filepath` (str, optional)
   - **Description:** Path to the input HDR file, which contains hyperspectral data. If omitted, the hyperspectral data won't be included.
   - **Default:** `None`
   - **Example:** `--hdr_filepath /path/to/your/file.hdr`
-
-- `-ga` / `--global_attributes` (str, optional)
-  - **Description:** Specifies global attributes for the NetCDF file. Can be provided either as:
-    1. A JSON string containing key/value pairs for global attributes.
-    2. A path to a YAML file that includes the global attributes.
-  - **Example:** `--global_attributes '{"key1": "value1", "key2": "value2"}'` or `--global_attributes /path/to/global_attributes.yaml`Note that the geospatial limits, date_created and history attributes are written automatically.
-  > Note: the geospatial limits, date_created and history attributes are computed within the script and written automatically to the CF-NetCDF file.
 
 ### Coordinate Arguments:
 

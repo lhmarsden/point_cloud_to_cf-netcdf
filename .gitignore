@@ -4,6 +4,7 @@ test.csv
 output/*
 config/global_attributes_copy*
 config/global_attributes_Nataly*
+config/global_attributes_test*
 test_execute.sh
 plyfile_test.py
 private_notes.txt

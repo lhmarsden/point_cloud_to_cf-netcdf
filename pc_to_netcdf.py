@@ -25,7 +25,7 @@ def main():
     # Input files
     parser.add_argument('-ply', '--ply_filepath', type=str, required=True, help='Path to the input ply file.')
     parser.add_argument('-hdr', '--hdr_filepath', type=str, default=None, help='Path to the input hdr file.')
-    parser.add_argument('-ga', '--global_attributes', type=str, help='Should be either 1) a JSON string with key/value pairs for global attributes, or 2) a yaml file including this information')
+    parser.add_argument('-ga', '--global_attributes', type=str, required=True, help='Should be either 1) a JSON string with key/value pairs for global attributes, or 2) a yaml file including this information')
 
     # X, Y and Z must all be specified if one is present
     # Allowed values for X, Y, Z
@@ -131,21 +131,25 @@ def main():
     logger.info("Reading in global attributes")
     global_attributes = GlobalAttributes()
     global_attributes.read_global_attributes(args.global_attributes)
-    ga_errors, ga_warnings = [], []#global_attributes.check()
+    reformatting_errors, reformatting_warnings = global_attributes.reformat_attributes()
+    global_attributes.derive(ply_df)
+    ga_errors, ga_warnings = global_attributes.check()
 
-    errors = data_errors + ga_errors
-    warnings = data_warnings + ga_warnings
+    errors = data_errors + ga_errors + reformatting_errors
+    warnings = data_warnings + ga_warnings + reformatting_warnings
 
     if len(warnings) > 0:
         logger.warning('\nWarnings\nWe recommend that these are fixed, but you can choose to ignore them:\n')
         for warning in warnings:
             logger.warning(warning)
     if len(errors) > 0:
-        logger.error('\nThe following errors were found:\n')
+        logger.error('\n\nThe following errors were found:\n')
         for error in errors:
             logger.error(error)
-        logger.error('\nNo NetCDF file has been created. Please correct the errors and try again.')
+        logger.error('No NetCDF file has been created. Please correct the errors and try again.\n\n')
     else:
+        logger.info("Global attributes read in a processed without error")
+        logger.info("Trying to create CF-NetCDF file")
         # Convert the DataFrame to a NetCDF file
         create_netcdf(ply_df, wavelength_df, args.output_filepath, global_attributes.dict, cf_crs)
         logger.info(f'File created: {args.output_filepath}')

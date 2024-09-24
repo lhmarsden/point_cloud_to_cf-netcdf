@@ -12,8 +12,8 @@ class NetCDF:
         self.output_filepath = output_filepath
         self.ncfile = nc.Dataset(self.output_filepath, mode='w', format='NETCDF4')
 
-    def calculate_vertical_bounds(self, altitude_values):
-        return np.min(altitude_values), np.max(altitude_values)
+    # def calculate_vertical_bounds(self, altitude_values):
+    #     return np.min(altitude_values), np.max(altitude_values)
 
     def define_grid_mapping(self, cf_crs):
         '''
@@ -26,7 +26,7 @@ class NetCDF:
 
     def write_coordinate_variables(self, ply_df, wavelength_df):
 
-        if wavelength_df:
+        if wavelength_df is not None and not wavelength_df.empty:
             num_points, num_bands = wavelength_df.shape
             wavelengths = wavelength_df.columns
         else:
@@ -217,39 +217,16 @@ class NetCDF:
         if 'latitude' in self.ncfile.variables and 'longitude' in self.ncfile.variables:
             intensity.setncattr('coordinates', 'latitude longitude')
 
-    def assign_global_attributes_from_data_or_code(self,ply_df):
-
-        altitude_values = self.ncfile.variables['altitude'][:]
-
-        # Derive bounding box for coordinates based on data
-        self.ncfile.setncattr('geospatial_lat_min', ply_df['latitude'].min())
-        self.ncfile.setncattr('geospatial_lat_max', ply_df['latitude'].max())
-        self.ncfile.setncattr('geospatial_lon_min', ply_df['longitude'].min())
-        self.ncfile.setncattr('geospatial_lon_max', ply_df['longitude'].max())
-
-        # Calculate vertical bounds
-        vertical_min, vertical_max = self.calculate_vertical_bounds(altitude_values)
-        self.ncfile.setncattr('geospatial_vertical_min', vertical_min)
-        self.ncfile.setncattr('geospatial_vertical_max', vertical_max)
-
-        # Get the current timestamp in ISO8601 format
-        current_timestamp = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
-        self.ncfile.setncattr('date_created', current_timestamp)
-        self.ncfile.setncattr('history', f'{current_timestamp}: File created using netCDF4 using Python.')
-
-    def assign_global_attributes_from_user(self,global_attributes):
-        for idx, row in global_attributes.df.iterrows():
-            attribute = row['Attribute']
-            value = row['value']
-            format = row['format']
+    def assign_global_attributes(self,global_attributes):
+        for attribute, value in global_attributes.items():
             if attribute not in self.ncfile.ncattrs() and value not in [np.nan, '', 'None', None, 'nan']:
-                if format == 'string':
-                    self.ncfile.setncattr_string(attribute, value)
-                elif format == 'number':
-                    value = float(value)
-                    self.ncfile.setncattr(attribute, value)
-                else:
-                    self.ncfile.setncattr(attribute, value)
+                # if format == 'string':
+                #     self.ncfile.setncattr_string(attribute, value)
+                # elif format == 'number':
+                #     value = float(value)
+                #     self.ncfile.setncattr(attribute, value)
+                # else:
+                self.ncfile.setncattr(attribute, value)
 
     def close(self):
         # Close the file
@@ -269,8 +246,7 @@ def create_netcdf(ply_df, wavelength_df, output_filepath, global_attributes, cf_
     if cf_crs:
         netcdf.define_grid_mapping(cf_crs)
     netcdf.write_1d_data(ply_df)
-    if wavelength_df:
+    if wavelength_df is not None and not wavelength_df.empty:
         netcdf.write_2d_data(wavelength_df)
-    netcdf.assign_global_attributes_from_data_or_code(ply_df)
-    netcdf.assign_global_attributes_from_user(global_attributes)
+    netcdf.assign_global_attributes(global_attributes)
     netcdf.close()
