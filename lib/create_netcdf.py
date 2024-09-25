@@ -37,7 +37,7 @@ class NetCDF:
         # Define a dimension as an arbitrary counter for the points
         self.ncfile.createDimension('point', size=num_points)
         # Write coordinate variable
-        point_var = self.ncfile.createVariable('point', 'f4', ('point',))
+        point_var = self.ncfile.createVariable('point', 'f4', ('point',), zlib=True, complevel=1)
         point_var[:] = range(num_points)
         # Adding variable attributes
         point_var.setncattr('units', '1')
@@ -48,7 +48,7 @@ class NetCDF:
         if num_bands:
             # Define a dimension and coordinate variable for the wavelength bands
             self.ncfile.createDimension('band', size=num_bands)
-            wavelength_var = self.ncfile.createVariable('band', 'f4', ('band',))
+            wavelength_var = self.ncfile.createVariable('band', 'f4', ('band',), zlib=True, complevel=1)
             wavelength_var[:] = wavelengths
 
             wavelength_var.setncattr('units', 'nanometers')
@@ -60,7 +60,7 @@ class NetCDF:
 
         # Check and initialise the longitude variable
         if 'longitude' in ply_df.columns:
-            longitude = self.ncfile.createVariable('longitude', 'f4', ('point',))
+            longitude = self.ncfile.createVariable('longitude', 'f4', ('point',), zlib=True, complevel=1)
             # Add values to the longitude variable
             longitude[:] = ply_df['longitude']
             # Assign longitude variable attributes
@@ -73,7 +73,7 @@ class NetCDF:
 
         # Check and initialise the latitude variable
         if 'latitude' in ply_df.columns:
-            latitude = self.ncfile.createVariable('latitude', 'f4', ('point',))
+            latitude = self.ncfile.createVariable('latitude', 'f4', ('point',), zlib=True, complevel=1)
             # Add values to the latitude variable
             latitude[:] = ply_df['latitude']
             # Assign latitude variable attributes
@@ -86,7 +86,7 @@ class NetCDF:
 
         # Check and initialise the altitude variable
         if 'altitude' in ply_df.columns:
-            altitude = self.ncfile.createVariable('altitude', 'f4', ('point',))
+            altitude = self.ncfile.createVariable('altitude', 'f4', ('point',), zlib=True, complevel=1)
             # Add values to the altitude variable
             altitude[:] = ply_df['altitude']
             # Assign altitude variable attributes
@@ -101,7 +101,7 @@ class NetCDF:
         # Check and initialise the x variable
         if 'X' in ply_df.columns or 'x' in ply_df.columns:
             x_column = 'X' if 'X' in ply_df.columns else 'x'
-            x = self.ncfile.createVariable('X', 'f4', ('point',))
+            x = self.ncfile.createVariable('X', 'f4', ('point',), zlib=True, complevel=1)
             # Add values to the x variable
             x[:] = ply_df[x_column]
             # Assign x variable attributes
@@ -114,7 +114,7 @@ class NetCDF:
         # Check and initialise the y variable
         if 'Y' in ply_df.columns or 'y' in ply_df.columns:
             y_column = 'Y' if 'Y' in ply_df.columns else 'y'
-            y = self.ncfile.createVariable('Y', 'f4', ('point',))
+            y = self.ncfile.createVariable('Y', 'f4', ('point',), zlib=True, complevel=1)
             # Add values to the y variable
             y[:] = ply_df[y_column]
             # Assign y variable attributes
@@ -127,7 +127,7 @@ class NetCDF:
         # Check and initialise the z variable
         if 'Z' in ply_df.columns or 'z' in ply_df.columns:
             z_column = 'Z' if 'Z' in ply_df.columns else 'z'
-            z = self.ncfile.createVariable('Z', 'f4', ('point',))
+            z = self.ncfile.createVariable('Z', 'f4', ('point',), zlib=True, complevel=1)
             # Add values to the z variable
             z[:] = ply_df[z_column]
             # Assign z variable attributes
@@ -139,7 +139,7 @@ class NetCDF:
 
         # Check and initialise the red variable
         if 'red' in ply_df.columns:
-            red = self.ncfile.createVariable('red', 'f4', ('point',))
+            red = self.ncfile.createVariable('red', 'f4', ('point',), zlib=True, complevel=1)
             # Add values to the red variable
             red[:] = ply_df['red']
             # Assign red variable attributes
@@ -151,7 +151,7 @@ class NetCDF:
 
         # Check and initialise the green variable
         if 'green' in ply_df.columns:
-            green = self.ncfile.createVariable('green', 'f4', ('point',))
+            green = self.ncfile.createVariable('green', 'f4', ('point',), zlib=True, complevel=1)
             # Add values to the green variable
             green[:] = ply_df['green']
             # Assign green variable attributes
@@ -163,7 +163,7 @@ class NetCDF:
 
         # Check and initialise the blue variable
         if 'blue' in ply_df.columns:
-            blue = self.ncfile.createVariable('blue', 'f4', ('point',))
+            blue = self.ncfile.createVariable('blue', 'f4', ('point',), zlib=True, complevel=1)
             # Add values to the blue variable
             blue[:] = ply_df['blue']
             # Assign blue variable attributes
@@ -176,7 +176,7 @@ class NetCDF:
         # Check and initialise the nomals
         # TODO: Check whether these should be written to the NetCDF file
         """ if 'nx' in ply_df.columns:
-            nx = self.ncfile.createVariable('nx', 'f4', ('point',))
+            nx = self.ncfile.createVariable('nx', 'f4', ('point',), zlib=True, complevel=1)
             nx[:] = ply_df['nx']
             nx.setncattr('units', '1')
             nx.setncattr('long_name', 'terrain normal vector, x channel')
@@ -184,7 +184,7 @@ class NetCDF:
             if 'latitude' in ply_df.columns and 'longitude' in ply_df.columns:
                 nx.setncattr('coordinates', 'latitude longitude')
         if 'ny' in ply_df.columns:
-            ny = self.ncfile.createVariable('ny', 'f4', ('point',))
+            ny = self.ncfile.createVariable('ny', 'f4', ('point',), zlib=True, complevel=1)
             ny[:] = ply_df['ny']
             ny.setncattr('units', '1')
             ny.setncattr('long_name', 'terrain normal vector, y channel')
@@ -192,7 +192,7 @@ class NetCDF:
             if 'latitude' in ply_df.columns and 'longitude' in ply_df.columns:
                 ny.setncattr('coordinates', 'latitude longitude')
         if 'nz' in ply_df.columns:
-            nz = self.ncfile.createVariable('nz', 'f4', ('point',))
+            nz = self.ncfile.createVariable('nz', 'f4', ('point',), zlib=True, complevel=1)
             nz[:] = ply_df['nz']
             nz.setncattr('units', '1')
             nz.setncattr('long_name', 'terrain normal vector, z channel')
@@ -203,7 +203,7 @@ class NetCDF:
     def write_2d_data(self, wavelength_df):
 
         # Initialize the variable
-        intensity = self.ncfile.createVariable('intensity', 'f4', ('point','band'))
+        intensity = self.ncfile.createVariable('intensity', 'f4', ('point','band'), zlib=True, complevel=1)
 
         # Add values to the intensity variable
         intensity[:] = wavelength_df
