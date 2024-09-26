@@ -69,8 +69,6 @@ class GlobalAttributes:
 
     def _read_from_yaml_file(self, filepath):
         """Read global attributes from a YAML file."""
-        # TODO: Reconfigure this to read from template yaml file provided?
-        # Or keep it simple with just key value, and a comment to the user
         with open(filepath, 'r') as file:
             data = yaml.safe_load(file)
         attributes = {key: value.get('value', None) for key, value in data.items() if value.get('value')}
