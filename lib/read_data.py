@@ -1,16 +1,9 @@
 import pandas as pd
 import numpy as np
-import os
-import sys
-import yaml
 import spectral as sp
 import open3d as o3d
 from plyfile import PlyData
-from pyproj import Proj, Transformer, CRS
-
-# # Load likely headers from YAML file
-# with open('config/possible_headers.yml', 'r') as file:
-#     likely_headers = yaml.safe_load(file)
+from pyproj import Transformer, CRS
 
 def get_ply_comment(plyfile):
     """

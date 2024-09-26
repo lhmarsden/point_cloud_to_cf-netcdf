@@ -55,7 +55,6 @@ float_attributes = [
 ]
 
 
-
 class GlobalAttributes:
 
     def __init__(self):
