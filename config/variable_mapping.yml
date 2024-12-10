@@ -1,0 +1,237 @@
+# Variables to be written to the NetCDF file
+# Variables in PLY/LAS not included in mapping file will not be written to the NetCDF file
+# Variables in mapping file not in PLY/LAS will be ignored
+#! Caution: Variables in mapping file should have a key 'possible_names'
+#! If the variable name in the PLY/LAS file is not listed as a possible_name, the variable won't be written to the NetCDF file
+
+longitude: # Name of variable to be used in NetCDF file
+  dtype: 'f4'
+  possible_names: # Possible names of variable in PLY or LAS file
+    - longitude
+    - lon
+    - lng
+  attributes: # Variable attributes to be written to NetCDF file for the variable
+    units: 'degrees_east'
+    long_name: 'longitude'
+    standard_name: 'longitude'
+    axis: 'X'
+    valid_min: -180.0
+    valid_max: 180.0
+    coverage_content_type: 'coordinate'
+
+latitude: # Name of variable to be used in NetCDF file
+  dtype: 'f4'
+  possible_names: # Possible names of variable in PLY or LAS file
+    - latitude
+    - lat
+  attributes: # Variable attributes to be written to NetCDF file for the variable
+    units: 'degrees_north'
+    long_name: 'latitude'
+    standard_name: 'latitude'
+    axis: 'Y'
+    valid_min: -90.0
+    valid_max: 90.0
+    coverage_content_type: 'coordinate'
+
+altitude: # Name of variable to be used in NetCDF file
+  dtype: 'f4'
+  possible_names: # Possible names of variable in PLY or LAS file
+    - altitude
+    - elevation
+    - elev
+    - alt
+  attributes: # Variable attributes to be written to NetCDF file for the variable
+    units: 'meters'
+    long_name: 'geometric height above geoid'
+    standard_name: 'altitude'
+    positive: 'up'
+    axis: 'Z'
+    valid_min: -10000.0
+    valid_max: 10000.0
+    coverage_content_type: 'coordinate'
+
+X: # Name of variable to be used in NetCDF file
+  dtype: 'f4'
+  possible_names: # Possible names of variable in PLY or LAS file
+    - X
+  attributes: # Variable attributes to be written to NetCDF file for the variable
+    units: 'meters'
+    long_name: 'X coordinate'
+    standard_name: 'projection_x_coordinate'
+    grid_mapping: 'crs'
+    coverage_content_type: 'coordinate'
+
+Y: # Name of variable to be used in NetCDF file
+  dtype: 'f4'
+  possible_names: # Possible names of variable in PLY or LAS file
+    - Y
+  attributes: # Variable attributes to be written to NetCDF file for the variable
+    units: 'meters'
+    long_name: 'Y coordinate'
+    standard_name: 'projection_y_coordinate'
+    grid_mapping: 'crs'
+    coverage_content_type: 'coordinate'
+
+Z: # Name of variable to be used in NetCDF file
+  dtype: 'f4'
+  possible_names: # Possible names of variable in PLY or LAS file
+    - Z
+  attributes: # Variable attributes to be written to NetCDF file for the variable
+    units: 'meters'
+    long_name: 'Z coordinate'
+    standard_name: 'altitude'
+    grid_mapping: 'crs'
+    coverage_content_type: 'coordinate'
+
+#TODO: Add missing standard_names when approved, also need to tweak valid_min and valid_max
+red: # Name of variable to be used in NetCDF file
+  dtype: 'i4' #! Would be f4 if between 0 and 1 and maybe between 0 and 255 too
+  possible_names: # Possible names of variable in PLY or LAS file
+    - red
+    - R
+  attributes: # Variable attributes to be written to NetCDF file for the variable
+    units: '1'
+    valid_min: 0
+    valid_max: 65535
+    long_name: 'red channel (normalised to 16-bit integer)'
+    coverage_content_type: 'physicalMeasurement'
+
+green: # Name of variable to be used in NetCDF file
+  dtype: 'i4' #! Would be f4 if between 0 and 1 and maybe between 0 and 255 too
+  possible_names: # Possible names of variable in PLY or LAS file
+    - green
+    - G
+  attributes: # Variable attributes to be written to NetCDF file for the variable
+    units: '1'
+    valid_min: 0
+    valid_max: 65535
+    long_name: 'green channel (normalised to 16-bit integer)'
+    coverage_content_type: 'physicalMeasurement'
+
+blue: # Name of variable to be used in NetCDF file
+  dtype: 'i4' #! Would be f4 if between 0 and 1 and maybe between 0 and 255 too
+  possible_names: # Possible names of variable in PLY or LAS file
+    - blue
+    - B
+  attributes: # Variable attributes to be written to NetCDF file for the variable
+    units: '1'
+    valid_min: 0
+    valid_max: 65535
+    long_name: 'blue channel (normalised to 16-bit integer)'
+    coverage_content_type: 'physicalMeasurement'
+
+nx: # Name of variable to be used in NetCDF file
+  dtype: 'f4'
+  possible_names: # Possible names of variable in PLY or LAS file
+    - nx
+    - normal_x
+  attributes: # Variable attributes to be written to NetCDF file for the variable
+    units: '1'
+    long_name: 'terrain normal vector, x channel'
+    coverage_content_type: 'physicalMeasurement'
+
+ny: # Name of variable to be used in NetCDF file
+  dtype: 'f4'
+  possible_names: # Possible names of variable in PLY or LAS file
+    - ny
+    - normal_y
+  attributes: # Variable attributes to be written to NetCDF file for the variable
+    units: '1'
+    long_name: 'terrain normal vector, y channel'
+    coverage_content_type: 'physicalMeasurement'
+
+nz: # Name of variable to be used in NetCDF file
+  dtype: 'f4'
+  possible_names: # Possible names of variable in PLY or LAS file
+    - nz
+    - normal_z
+  attributes: # Variable attributes to be written to NetCDF file for the variable
+    units: '1'
+    long_name: 'terrain normal vector, z channel'
+    coverage_content_type: 'physicalMeasurement'
+
+vx: # Name of variable to be used in NetCDF file
+  dtype: 'f4'
+  possible_names: # Possible names of variable in PLY or LAS file
+    - vx
+  attributes: # Variable attributes to be written to NetCDF file for the variable
+    units: '1'
+    long_name: 'sensor view vector, x channel'
+    standard_name: 'sensor_to_point_direction_x_component'
+    coverage_content_type: 'physicalMeasurement'
+
+vy: # Name of variable to be used in NetCDF file
+  dtype: 'f4'
+  possible_names: # Possible names of variable in PLY or LAS file
+    - vy
+  attributes: # Variable attributes to be written to NetCDF file for the variable
+    units: '1'
+    long_name: 'sensor view vector, y channel'
+    standard_name: 'sensor_to_point_direction_y_component'
+    coverage_content_type: 'physicalMeasurement'
+
+vz: # Name of variable to be used in NetCDF file
+  dtype: 'f4'
+  possible_names: # Possible names of variable in PLY or LAS file
+    - vz
+  attributes: # Variable attributes to be written to NetCDF file for the variable
+    units: '1'
+    long_name: 'sensor view vector, z channel'
+    standard_name: 'sensor_to_point_direction_z_component'
+    coverage_content_type: 'physicalMeasurement'
+
+# TODO check which is pixel and line number out of px, py
+px: # Name of variable to be used in NetCDF file
+  dtype: 'i4'
+  possible_names: # Possible names of variable in PLY or LAS file
+    - px
+  attributes: # Variable attributes to be written to NetCDF file for the variable
+    units: '1'
+    long_name: 'pixel number'
+    coverage_content_type: 'auxiliaryInformation'
+
+py: # Name of variable to be used in NetCDF file
+  dtype: 'i4'
+  possible_names: # Possible names of variable in PLY or LAS file
+    - py
+  attributes: # Variable attributes to be written to NetCDF file for the variable
+    units: '1'
+    long_name: 'line number, y channel'
+    coverage_content_type: 'auxiliaryInformation'
+
+scan_angle_rank: # Name of variable to be used in NetCDF file
+  dtype: 'i4'
+  possible_names: # Possible names of variable in PLY or LAS file
+    - scan_angle_rank
+    - scan_angle
+  attributes: # Variable attributes to be written to NetCDF file for the variable
+    # TODO: Propose standard_name
+    units: 'degrees'
+    long_name: 'Scan angle relative to nadir'
+    valid_min: -90
+    valid_max: 90
+    coverage_content_type: 'physicalMeasurement'
+
+gps_time: # Name of variable to be used in NetCDF file
+  dtype: 'i4'
+  possible_names: # Possible names of variable in PLY or LAS file
+    - gps_time
+    - time_stamp
+    - epoch
+  attributes: # Variable attributes to be written to NetCDF file for the variable
+    units: 'seconds since 1980-01-06 00:00:00 UTC'
+    long_name: 'Time at when the point was measured'
+    standard_name: 'time'
+    coverage_content_type: 'coordinate'
+
+intensity: # Name of variable to be used in NetCDF file
+  dtype: 'i4'
+  possible_names: # Possible names of variable in PLY or LAS file
+    - intensity
+    - signal_strength
+    - spectral intensity
+  attributes: # Variable attributes to be written to NetCDF file for the variable
+    units: '1'
+    long_name: 'strength of returning signal to the LiDAR (normalised to 16-bit integer)'
+    standard_name: 'toa_outgoing_radiance_per_unit_wavelength'
+    coverage_content_type: 'physicalMeasurement'

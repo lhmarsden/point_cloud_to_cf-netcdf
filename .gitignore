@@ -8,3 +8,4 @@ test_execute.sh
 plyfile_test.py
 private_notes.txt
 config/global_attributes_Nataly.yml
+visualise_data.py

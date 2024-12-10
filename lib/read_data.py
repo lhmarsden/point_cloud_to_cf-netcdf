@@ -4,11 +4,36 @@ import spectral as sp
 import open3d as o3d
 from plyfile import PlyData
 from pyproj import Transformer, CRS
+import laspy
+import gc
+import dask.dataframe as dd
+import dask.array as da
+
+# TODO: Use variable mapping file to give column headers in df
+# TODO: the column headers will be the variable names in the file
+# TODO: add logging for each variable mapped and each variable not mapped
+
+def combine_dataframes(dfs):
+    '''
+    Combining a list of dataframes with the same columns into one df
+    '''
+    combined_df = pd.DataFrame()  # Start with an empty DataFrame
+
+    for chunk in dfs:
+        combined_df = pd.concat([combined_df, chunk], ignore_index=True)
+        # Clear the previous chunk from memory
+        del chunk
+        # Force garbage collection
+        gc.collect()
+        # TODO: What if the LAS file includes latitude and longitude?
+
+    return combined_df
 
 def get_ply_comment(plyfile):
     """
     Get the ply file comment string
     """
+    #! This will not be neccessary if projection in metadata file
     with open(plyfile, 'rb') as fd:
         for line in fd:
             # Decode the line to a string
@@ -25,21 +50,26 @@ def get_ply_comment(plyfile):
         raise IOError("Didn't find end of header. This can't be a valid PLY file.")
 
 
-def get_cf_crs(ply_filepath):
+def get_cf_crs(ply_filepath=None):
     """
     Get a dictionary of variable attributes to write to the CRS variable
     From a PROJ.4 string in the comment in the PLY file header
     """
-    comment_str = get_ply_comment(ply_filepath)
+    if ply_filepath:
+        comment_str = get_ply_comment(ply_filepath)
+        # get projection string from the comment
+        ind_crs = comment_str.find("utm_crs")
+        if ind_crs == -1:
+            return None
 
-    # get projection string from the comment
-    ind_crs = comment_str.find("utm_crs")
-    if ind_crs == -1:
-        return None
+        proj4str = comment_str[ind_crs:].split(";")[0].split("utm_crs")[1]
+        proj4str = proj4str[proj4str.find("=")+1:]
+        crs = CRS.from_proj4(proj4str)
+    else:
+        # TODO: generalise this (or code below) to get from some argument or config file
+        crs = CRS.from_proj4('+proj=utm +zone=33 +datum=WGS84 +units=m +no_defs')
 
-    proj4str = comment_str[ind_crs:].split(";")[0].split("utm_crs")[1]
-    proj4str = proj4str[proj4str.find("=")+1:]
-    crs = CRS.from_proj4(proj4str)
+    print(crs)
     cf_crs = crs.to_cf()
     return cf_crs
 
@@ -55,65 +85,136 @@ def utm_to_latlon(x, y, cf_crs):
     lon, lat = transformer.transform(x, y)
     return lat, lon
 
-def ply_to_df(ply_filepath, cf_crs, xcoord=None, ycoord=None, zcoord=None):
-    # TODO: Need to be able to read latitude, longitude and altitude if they are present
-    # Issue: plyfile library can't read the file provided because of early end-of-file warnings (corrupted?)
-    # Issue: open3d is not able to read latitude and longitude directly as it does points, colors and normals
-    # Issue: velocities also not read
-    # Read PLY file
-    point_cloud = o3d.io.read_point_cloud(ply_filepath)
+def process_chunk(start, end, data_dict):
+    chunk = {key: value[start:end] for key, value in data_dict.items()}
+    return pd.DataFrame(chunk)
 
-    # Convert to pandas DataFrame
-    points_df = pd.DataFrame(point_cloud.points, columns=["x", "y", "z"])
+def las_to_df(las_filepath, cf_crs, variable_mapping, xcoord=None, ycoord=None, zcoord=None):
+    # Open the LAS file
+    las = laspy.read(las_filepath)
+    print('File read in')
 
-    # If X, Y and Z are equal to lat, lon, altitude
-    if xcoord:
-        points_df.rename(columns={'x': xcoord}, inplace=True)
-    if ycoord:
-        points_df.rename(columns={'y': ycoord}, inplace=True)
-    if zcoord:
-        points_df.rename(columns={'z': zcoord}, inplace=True)
+    data_dict = {}
 
-    # Initialize an list to hold the DataFrames
-    dataframes = [points_df]
+    # Get x, y, z coordinates and convert them to NumPy arrays. Scalar and offset applied.
+    data_dict['x'] = np.array(las.x)
+    data_dict['y'] = np.array(las.y)
+    data_dict['z'] = np.array(las.z)
 
-    # Check if colors and normals exist and append them to the list
-    if point_cloud.has_colors():
-        colors_df = pd.DataFrame(point_cloud.colors, columns=["red", "green", "blue"])
-        dataframes.append(colors_df)
-    if point_cloud.has_normals():
-        normals_df = pd.DataFrame(point_cloud.normals, columns=["nx", "ny", "nz"])
-        dataframes.append(normals_df)
+    print('x,y,z added to dict')
 
-    # Use plyfile to manually extract velocities (vx, vy, vz)
-    try:
-        ply_data = PlyData.read(ply_filepath)
-        vertex_data = ply_data['vertex'].data
+    # List of variables to extract
+    variable_list = ['blue', 'red', 'green', 'scan_angle_rank', 'gps_time', 'intensity']
 
-        # Check if vx, vy, vz exist and extract them
-        if all(field in vertex_data.dtype.names for field in ['vx', 'vy', 'vz']):
-            vx = vertex_data['vx']
-            vy = vertex_data['vy']
-            vz = vertex_data['vz']
-            velocities_df = pd.DataFrame(np.column_stack((vx, vy, vz)), columns=["vx", "vy", "vz"])
-            dataframes.append(velocities_df)
+    # Iterate over variable_list and check if the variable exists in las.point_format.dimensions
+    for var in variable_list:
+        if var in [dim.name for dim in las.point_format.dimensions]:
+            print('adding ',var,' to dict')
+            data_dict[var] = np.array(las[var])  # Ensure conversion to NumPy array
 
-    except Exception as e:
-        print(f"Failed to extract velocities: {e}")
+    # Convert the dictionary to a pandas DataFrame
+    # Process in smaller chunks, for example, chunks of 10000 rows
+    chunk_size = 10000000
+    num_rows = len(data_dict['x'])
 
-    # Concatenate all DataFrames horizontally
-    combined_df = pd.concat(dataframes, axis=1)
+    # Process each chunk
+    dfs = []
+    print('Processing chunks to df')
+    for i in range(0, num_rows, chunk_size):
+        df_chunk = process_chunk(i, i + chunk_size, data_dict)
+        # If X, Y and Z are equal to lat, lon, altitude
+        if xcoord:
+            df_chunk.rename(columns={'x': xcoord}, inplace=True)
+        if ycoord:
+            df_chunk.rename(columns={'y': ycoord}, inplace=True)
+        if zcoord:
+            df_chunk.rename(columns={'z': zcoord}, inplace=True)
+        dfs.append(df_chunk)
 
-    if not all(col in combined_df.columns for col in ['latitude', 'longitude']):
-        # Calculate latitude and longitude from X and Y and the CRS
-        lat, lon = utm_to_latlon(combined_df['x'].values, combined_df['y'].values, cf_crs)
-        combined_df['latitude'], combined_df['longitude'] = lat, lon
+    print('Calculating lat/lon')
+    if not all(col in dfs[0].columns for col in ['latitude', 'longitude']):
+        cf_crs = get_cf_crs()
+        processed_dfs = []
+        for df in dfs:
+            # Calculate latitude and longitude from X and Y and the CRS
+            lat, lon = utm_to_latlon(df['x'].values, df['y'].values, cf_crs)
+            df['latitude'], df['longitude'] = lat, lon
+            processed_dfs.append(df)
+        dfs = processed_dfs
     else:
         pass
+
+    print('combining dataframes')
+    combined_df = combine_dataframes(dfs)
+
+    return combined_df
+
+def list_variables_in_ply(ply_filepath):
+    # Read the PLY file
+    with open(ply_filepath, 'rb') as file:
+        ply_data = PlyData.read(file)
+
+    # Extract the column names dynamically from the PLY header
+    column_names = [prop.name for prop in ply_data['vertex'].properties]
+
+    return column_names
+
+def ply_to_df(ply_filepath, cf_crs, variable_mapping, xcoord=None, ycoord=None, zcoord=None):
+    # Read the PLY file
+    with open(ply_filepath, 'rb') as file:
+        ply_data = PlyData.read(file)
+
+    # Extract the column names dynamically from the PLY header
+    column_names = [prop.name for prop in ply_data['vertex'].properties]
+
+    # Dictionary to map columns based on possible names
+    column_mapping = {}
+    unused_columns = []
+
+    # Extract vertex data into a DataFrame using the dynamic column names
+    df = pd.DataFrame(ply_data['vertex'].data, columns=column_names)
+
+    for col in df.columns:
+        matched = False
+        for var_name, details in variable_mapping.items():
+            if col.lower() in [name.lower() for name in details['possible_names']]:
+                column_mapping[col] = var_name
+                matched = True
+                break
+        if not matched:
+            unused_columns.append(col)
+
+    # Rename columns based on the mapping
+    df = df.rename(columns=column_mapping)
+
+    # Drop unused columns and print a message
+    if unused_columns:
+        print(f"Removing columns not found in dictionary: {unused_columns}")
+        df = df.drop(columns=unused_columns)
+
+    # Define the chunk size
+    chunk_size = 10_000_000
+
+    # Split the dataframe into a list of smaller dataframes
+    dataframes = [df[i:i + chunk_size] for i in range(0, len(df), chunk_size)]
+
+    if not all(col in dataframes[0].columns for col in ['latitude', 'longitude']):
+        processed_dfs = []
+        for df in dataframes:
+            # Calculate latitude and longitude from X and Y and the CRS
+            lat, lon = utm_to_latlon(df['X'].values, df['Y'].values, cf_crs)
+            df['latitude'], df['longitude'] = lat, lon
+            processed_dfs.append(df)
+        dfs = processed_dfs
+    else:
+        pass
+
+    combined_df = combine_dataframes(dfs)
 
     return combined_df
 
 def read_hyspex(hdr_filepath):
+    # TODO: NORCE will send a python function to calibrate these values.
     # Function to read Hyspex image and flatten it to a pandas dataframe
     hdr = sp.envi.open(hdr_filepath)
     wavelengths = hdr.bands.centers

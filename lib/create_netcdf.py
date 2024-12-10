@@ -5,6 +5,7 @@ import numpy as np
 import pyproj
 import yaml
 
+#TODO: add logging for each variable written
 
 class NetCDF:
 
@@ -24,7 +25,7 @@ class NetCDF:
         for attr, value in cf_crs.items():
             crs.setncattr(attr, value)
 
-    def write_coordinate_variables(self, ply_df, wavelength_df):
+    def write_coordinate_variables(self, ply_df, wavelength_df, variable_mapping):
 
         if wavelength_df is not None and not wavelength_df.empty:
             num_points, num_bands = wavelength_df.shape
@@ -56,7 +57,7 @@ class NetCDF:
             wavelength_var.setncattr('standard_name', 'radiation_wavelength')
             wavelength_var.setncattr('coverage_content_type', 'coordinate')
 
-    def write_1d_data(self, ply_df):
+    def write_1d_data(self, ply_df, variable_mapping):
 
         # Check and initialise the longitude variable
         if 'longitude' in ply_df.columns:
@@ -133,7 +134,7 @@ class NetCDF:
             # Assign z variable attributes
             z.setncattr('units', 'meters')
             z.setncattr('long_name', 'Z coordinate')
-            z.setncattr('standard_name', 'height')
+            z.setncattr('standard_name', 'altitude')
             z.setncattr('grid_mapping', 'crs')
             z.setncattr('coverage_content_type', 'coordinate')
 
@@ -144,7 +145,9 @@ class NetCDF:
             red[:] = ply_df['red']
             # Assign red variable attributes
             red.setncattr('units', '1')
-            red.setncattr('long_name', 'red channel')
+            red.setncattr('valid_min', 0)
+            red.setncattr('valid_max', 65535)
+            red.setncattr('long_name', 'red channel (normalised to 16-bit integer)')
             red.setncattr('coverage_content_type', 'physicalMeasurement')
             if 'latitude' in ply_df.columns and 'longitude' in ply_df.columns:
                 red.setncattr('coordinates', 'latitude longitude')
@@ -156,7 +159,9 @@ class NetCDF:
             green[:] = ply_df['green']
             # Assign green variable attributes
             green.setncattr('units', '1')
-            green.setncattr('long_name', 'green channel')
+            green.setncattr('valid_min', 0)
+            green.setncattr('valid_max', 65535)
+            green.setncattr('long_name', 'green channel (normalised to 16-bit integer)')
             green.setncattr('coverage_content_type', 'physicalMeasurement')
             if 'latitude' in ply_df.columns and 'longitude' in ply_df.columns:
                 green.setncattr('coordinates', 'latitude longitude')
@@ -168,14 +173,16 @@ class NetCDF:
             blue[:] = ply_df['blue']
             # Assign blue variable attributes
             blue.setncattr('units', '1')
-            blue.setncattr('long_name', 'blue channel')
+            blue.setncattr('valid_min', 0)
+            blue.setncattr('valid_max', 65535)
+            blue.setncattr('long_name', 'blue channel (normalised to 16-bit integer)')
             blue.setncattr('coverage_content_type', 'physicalMeasurement')
             if 'latitude' in ply_df.columns and 'longitude' in ply_df.columns:
                 blue.setncattr('coordinates', 'latitude longitude')
 
         # Check and initialise the nomals
         # TODO: Check whether these should be written to the NetCDF file
-        """ if 'nx' in ply_df.columns:
+        if 'nx' in ply_df.columns:
             nx = self.ncfile.createVariable('nx', 'f4', ('point',), zlib=True, complevel=1)
             nx[:] = ply_df['nx']
             nx.setncattr('units', '1')
@@ -198,9 +205,43 @@ class NetCDF:
             nz.setncattr('long_name', 'terrain normal vector, z channel')
             nz.setncattr('coverage_content_type', 'physicalMeasurement')
             if 'latitude' in ply_df.columns and 'longitude' in ply_df.columns:
-                nz.setncattr('coordinates', 'latitude longitude') """
+                nz.setncattr('coordinates', 'latitude longitude')
 
-    def write_2d_data(self, wavelength_df):
+        # Variables from Oliver's LAS files
+        if 'scan_angle_rank' in ply_df.columns:
+            scanangle = self.ncfile.createVariable('scan_angle_rank', 'i4', ('point',), zlib=True, complevel=1)
+            scanangle[:] = ply_df['scan_angle_rank']
+            scanangle.setncattr('units', 'degrees')
+            scanangle.setncattr('long_name', 'Scan angle relative to nadir')
+            scanangle.setncattr('valid_min', -90)
+            scanangle.setncattr('valid_max', 90)
+            # scanangle.setncattr('standard_name', '')
+            scanangle.setncattr('coverage_content_type', 'physicalMeasurement')
+            if 'latitude' in ply_df.columns and 'longitude' in ply_df.columns:
+                scanangle.setncattr('coordinates', 'latitude longitude')
+
+        if 'gps_time' in ply_df.columns:
+            # TODO: Need to convert into CF acceptable time format
+            gps_time = self.ncfile.createVariable('gps_time', 'i4', ('point',), zlib=True, complevel=1)
+            gps_time[:] = ply_df['gps_time']
+            gps_time.setncattr('units', 'seconds since 1980-01-06 00:00:00 UTC')
+            gps_time.setncattr('long_name', 'Time at when the point was measured')
+            gps_time.setncattr('standard_name', 'time')
+            gps_time.setncattr('coverage_content_type', 'coordinate')
+            if 'latitude' in ply_df.columns and 'longitude' in ply_df.columns:
+                gps_time.setncattr('coordinates', 'latitude longitude')
+
+        if 'intensity' in ply_df.columns:
+            intensity = self.ncfile.createVariable('intensity', 'i4', ('point',), zlib=True, complevel=1)
+            intensity[:] = ply_df['intensity']
+            intensity.setncattr('units', '1')
+            intensity.setncattr('long_name', 'strength of returning signal to the LiDAR (normalised to 16-bit integer)')
+            # intensity.setncattr('standard_name', '')
+            intensity.setncattr('coverage_content_type', 'physicalMeasurement')
+            if 'latitude' in ply_df.columns and 'longitude' in ply_df.columns:
+                intensity.setncattr('coordinates', 'latitude longitude')
+
+    def write_2d_data(self, wavelength_df, variable_mapping):
 
         # Initialize the variable
         intensity = self.ncfile.createVariable('intensity', 'f4', ('point','band'), zlib=True, complevel=1)
@@ -233,20 +274,24 @@ class NetCDF:
         self.ncfile.close()
 
 
-def create_netcdf(ply_df, wavelength_df, output_filepath, global_attributes, cf_crs):
+def create_netcdf(ply_df, wavelength_df, variable_mapping, output_filepath, global_attributes, cf_crs):
     '''
     ply_df : pandas dataframe with columns including latitude, longitude, z
     wavelength_df: frequency bands and intensity values. None if not provided.
     global_attributes : python dictionary of global attributes
     output_filepath: where to write the netcdf file
     cf_crs: Python dictionary of the key value pairs for the variable attributes of the CRS variable.
+    variable_mapping: Python dictionary containing the variable names and attributes
     '''
+    #TODO: The line number (px, py) needs to be written to the CF-NetCDF file to be able to recreate the PLY and HDR
+    # This could be stored as a variable maybe
     netcdf = NetCDF(output_filepath)
-    netcdf.write_coordinate_variables(ply_df,wavelength_df)
+    netcdf.write_coordinate_variables(ply_df,wavelength_df,variable_mapping)
     if cf_crs:
         netcdf.define_grid_mapping(cf_crs)
-    netcdf.write_1d_data(ply_df)
+    netcdf.write_1d_data(ply_df, variable_mapping)
     if wavelength_df is not None and not wavelength_df.empty:
-        netcdf.write_2d_data(wavelength_df)
+        # TODO: variable mapping currently only written for 1D, not hyspex
+        netcdf.write_2d_data(wavelength_df, variable_mapping)
     netcdf.assign_global_attributes(global_attributes)
     netcdf.close()

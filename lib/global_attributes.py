@@ -115,8 +115,8 @@ class GlobalAttributes:
         self.dict.setdefault('geospatial_lat_max', ply_df['latitude'].max())
         self.dict.setdefault('geospatial_lon_min', ply_df['longitude'].min())
         self.dict.setdefault('geospatial_lon_max', ply_df['longitude'].max())
-        self.dict.setdefault('geospatial_vertical_min', ply_df['z'].min())
-        self.dict.setdefault('geospatial_vertical_max', ply_df['z'].max())
+        self.dict.setdefault('geospatial_vertical_min', ply_df['Z'].min())
+        self.dict.setdefault('geospatial_vertical_max', ply_df['Z'].max())
 
         # Get the current timestamp in ISO8601 format
         current_timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')

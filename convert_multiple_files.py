@@ -6,7 +6,7 @@ import argparse
 def run_script(csv_file):
     # Define the known argument names for the command
     known_args = [
-        'ply_filepath', 'hdr_filepath', 'xcoord', 'ycoord', 'zcoord',
+        'ply_filepath', 'las_filepath', 'hdr_filepath', 'xcoord', 'ycoord', 'zcoord',
         'crs_config', 'output_filepath'
     ]
 
