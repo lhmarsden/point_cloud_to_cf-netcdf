@@ -17,7 +17,7 @@ longitude: # Name of variable to be used in NetCDF file
     axis: 'X'
     valid_min: -180.0
     valid_max: 180.0
-    coverage_content_type: 'coordinate'
+    coverage_content_type: 'physicalMeasurement'
 
 latitude: # Name of variable to be used in NetCDF file
   dtype: 'f4'
@@ -31,7 +31,7 @@ latitude: # Name of variable to be used in NetCDF file
     axis: 'Y'
     valid_min: -90.0
     valid_max: 90.0
-    coverage_content_type: 'coordinate'
+    coverage_content_type: 'physicalMeasurement'
 
 altitude: # Name of variable to be used in NetCDF file
   dtype: 'f4'
@@ -48,7 +48,7 @@ altitude: # Name of variable to be used in NetCDF file
     axis: 'Z'
     valid_min: -10000.0
     valid_max: 10000.0
-    coverage_content_type: 'coordinate'
+    coverage_content_type: 'physicalMeasurement'
 
 X: # Name of variable to be used in NetCDF file
   dtype: 'f4'
@@ -59,7 +59,7 @@ X: # Name of variable to be used in NetCDF file
     long_name: 'X coordinate'
     standard_name: 'projection_x_coordinate'
     grid_mapping: 'crs'
-    coverage_content_type: 'coordinate'
+    coverage_content_type: 'physicalMeasurement'
 
 Y: # Name of variable to be used in NetCDF file
   dtype: 'f4'
@@ -70,7 +70,7 @@ Y: # Name of variable to be used in NetCDF file
     long_name: 'Y coordinate'
     standard_name: 'projection_y_coordinate'
     grid_mapping: 'crs'
-    coverage_content_type: 'coordinate'
+    coverage_content_type: 'physicalMeasurement'
 
 Z: # Name of variable to be used in NetCDF file
   dtype: 'f4'
@@ -81,7 +81,7 @@ Z: # Name of variable to be used in NetCDF file
     long_name: 'Z coordinate'
     standard_name: 'altitude'
     grid_mapping: 'crs'
-    coverage_content_type: 'coordinate'
+    coverage_content_type: 'physicalMeasurement'
 
 #TODO: Add missing standard_names when approved, also need to tweak valid_min and valid_max
 red: # Name of variable to be used in NetCDF file
