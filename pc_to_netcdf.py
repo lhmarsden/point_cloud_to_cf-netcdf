@@ -5,10 +5,43 @@ from lib.global_attributes import GlobalAttributes
 from lib.variable_mapping import VariableMapping
 import argparse
 import yaml
+import toml
+import json
 import sys
 import logging
 
 logger = logging.getLogger(__name__)
+
+def is_valid_json(json_string):
+    """Check if the string is a valid JSON."""
+    try:
+        json.loads(json_string)
+        return True
+    except json.JSONDecodeError:
+        return False
+
+def is_valid_yaml(file_path):
+    """Check if the file is a valid YAML file."""
+    if os.path.isfile(file_path) and (file_path.endswith('.yaml') or file_path.endswith('.yml')):
+        try:
+            with open(file_path, 'r') as f:
+                yaml.safe_load(f)
+            return True
+        except yaml.YAMLError:
+            return False
+    return False
+
+def is_valid_toml(file_path):
+    """Check if the file is a valid TOML file."""
+    if os.path.isfile(file_path) and file_path.endswith('.toml'):
+        try:
+            with open(file_path, 'r') as f:
+                toml.load(f)
+            return True
+        except toml.TomlDecodeError:
+            return False
+    return False
+
 
 def main():
 
@@ -30,9 +63,8 @@ def main():
     group.add_argument('-ply', '--ply_filepath', type=str, help='Path to the input ply file.')
     group.add_argument('-las', '--las_filepath', type=str, help='Path to the input las file.')
     parser.add_argument('-hdr', '--hdr_filepath', type=str, default=None, help='Path to the input hdr file.')
-    parser.add_argument('-ga', '--global_attributes', type=str, required=True, help='Should be either 1) a JSON string with key/value pairs for global attributes, or 2) a yaml file including this information')
+    parser.add_argument('-ga', '--global_attributes', type=str, required=True, help='Should be either 1) a JSON string with key/value pairs for global attributes, 2) a yaml file including this information 3) A toml file including this information')
     parser.add_argument('-vm', '--variable_mapping', type=str, required=True, help='Should be filepath to a yaml file including this information')
-    #TODO: The global attributes will be in a TOML file, so need to rewrite this.
 
     # X, Y and Z must all be specified if one is present
     # Allowed values for X, Y, Z
@@ -67,11 +99,16 @@ def main():
     # If X, Y and Z aren't specified, some information on the grid mapping is required
     # This could be in the crs_config file (argument below) or as a comment in the PLY file or lat/lon in file as well as X/Y
     parser.add_argument('-crs', '--crs_config', type=str, default=None, help='Path to the config yaml file contain the attributes to be written to the CRS variable.')
+    parser.add_argument('-proj4', '--proj4str', type=str, default=None, help='proj4str use to create the attributes for the CRS variable.')
 
     # Output filepath
     parser.add_argument('-o', '--output_filepath', type=str, default=None, help='Path to the output NetCDF file. If not provided, defaults to a subfolder "output" in the git repo with the same name as the input CSV file but with .nc extension.')
 
     args = parser.parse_args()
+
+    if args.crs_config and args.proj4str:
+        parser.error("You cannot specify both --crs_config and --proj4str. Please provide only one or neither if the proj4 string is in the comment in the header of the PLY file.")
+
 
     # Check conditions for X, Y, Z group
     if args.xcoord or args.ycoord or args.zcoord:
@@ -83,23 +120,36 @@ def main():
         if len(set(xyz_coords)) != 3:
             parser.error('X, Y, and Z must each be unique (latitude, longitude, altitude cannot be repeated).')
 
+    # Check if the global attributes argument is a valid JSON string, YAML file, or TOML file
+    if is_valid_json(args.global_attributes):
+        logger.info("Global attribute provided in JSON string.")
+    elif is_valid_yaml(args.global_attributes):
+        logger.info("Global attribute provided in YAML file.")
+    elif is_valid_toml(args.global_attributes):
+        logger.info("Global attribute provided in TOML file.")
+    else:
+        logger.error("Global attributes must be provided in a JSON string or TOML or YAML file.")
+
     # Load in the grid mapping config file if it exists and not None
     if args.crs_config:
-        logger.info(f"Loading grid mapping from config file")
-        if not os.path.exists(args.crs_config):
-            logger.error(f"Error: The grid mapping configuration file '{args.crs_config}' could not be found.")
-            logger.error("Check that the filepath is correct")
-            sys.exit(1)
-        with open(args.crs_config, "r") as file:
-            cf_crs = yaml.safe_load(file)
-        logger.info("CF grid mapping configuration file loaded successfully")
-    else:
+        try:
+            logger.info(f"Loading grid mapping from config file")
+            if not os.path.exists(args.crs_config):
+                logger.error(f"Error: The grid mapping configuration file '{args.crs_config}' could not be found.")
+                logger.error("Check that the filepath is correct")
+                sys.exit(1)
+            with open(args.crs_config, "r") as file:
+                cf_crs = yaml.safe_load(file)
+            logger.info("CF grid mapping configuration file loaded successfully")
+        except:
+            crs_errors, crs_warnings = [f'Unable to load CRS from {args.crs_config}']
+    elif args.proj4str:
+        # Check if valid proj4 string and convert that
+        logger.info("Trying to calculate a CF grid mapping from the PROJ.4 string")
+        cf_crs, crs_errors, crs_warnings = get_cf_crs(proj4str=args.proj4str)
+    elif args.ply_filepath:
         logger.info("Trying to calculate a CF grid mapping from the PROJ.4 string in the PLY header comment")
-        cf_crs = get_cf_crs(args.ply_filepath)
-
-    # TODO: If LAS file, CRS must be provided separately
-    # TODO: Extra variables. Consider requiring a mapping file for all variables with variable attributes
-    # TODO: HDR only if PLY? Not LAS?
+        cf_crs, crs_errors, crs_warnings = get_cf_crs(ply_filepath=args.ply_filepath)
 
     # Determine the output filepath if not provided as an argument
     if args.output_filepath is None:
@@ -131,12 +181,18 @@ def main():
     if args.ply_filepath:
         logger.info("Checking what variables are in the PLY file")
         variable_names = list_variables_in_ply(args.ply_filepath)
-        # TODO: This might have to be done after reading in HYSPEX and PLY
-        # But this will require reconfiguring of processing dataframe.
     # elif args.las_filepath:
     #     logger.info("Checking what variables are in the LAS file")
     #     variable_names = list_variables_in_las()
+
+    # TODO: Remove this when ready to process hyspex
+    args.hdr_filepath = None
+
+    if args.hdr_filepath:
+        variable_names = variable_names + ['intensity']
+
     vm_errors, vm_warnings = variable_mapping.check(variable_names)
+    #vm_errors, vm_warnings = [], [] # Use this line to bypass checking of variables
 
     # Read the PLY file into a pandas DataFrame
     data_errors = []
@@ -156,8 +212,7 @@ def main():
         logger.error("Error: No input file provided")
         sys.exit(1)
 
-    #if args.hdr_filepath:
-    if not args.hdr_filepath: # TODO: For testing purposes, ignoring hyspex file, remove this
+    if args.hdr_filepath:
         logger.info("Trying to load the data from the hyspex file and write them to a pandas dataframe")
         wavelength_df = read_hyspex(args.hdr_filepath)
         logger.info(f"Data from {args.hdr_filepath} loaded in successfully")
@@ -179,12 +234,13 @@ def main():
     reformatting_errors, reformatting_warnings = global_attributes.reformat_attributes()
     global_attributes.derive(pc_df)
     ga_errors, ga_warnings = global_attributes.check()
+    # TODO: Comment out line below when ready to check global attributes
+    ga_errors, ga_warnings = [], [] # Use this line to bypass check of global attributes
 
-    errors = data_errors + ga_errors + reformatting_errors + vm_errors
-    warnings = data_warnings + ga_warnings + reformatting_warnings + vm_warnings
+    errors = data_errors + ga_errors + reformatting_errors + vm_errors + crs_errors
+    warnings = data_warnings + ga_warnings + reformatting_warnings + vm_warnings + crs_warnings
 
     if len(warnings) > 0:
-        # TODO: Consider adding a prompt to continue for warnings
         logger.warning('\nWarnings\nWe recommend that these are fixed, but you can choose to ignore them:\n')
         for warning in warnings:
             logger.warning(warning)
@@ -194,7 +250,7 @@ def main():
             logger.error(error)
         logger.error('No NetCDF file has been created. Please correct the errors and try again.\n\n')
     else:
-        logger.info("Global attributes read in a processed without error")
+        logger.info("Data and metadata read in a processed without error")
         logger.info("Trying to create CF-NetCDF file")
         # Convert the DataFrame to a NetCDF file
         create_netcdf(pc_df, wavelength_df, variable_mapping.dict, args.output_filepath, global_attributes.dict, cf_crs)

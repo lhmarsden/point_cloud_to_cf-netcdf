@@ -1,17 +1,12 @@
 import pandas as pd
 import numpy as np
 import spectral as sp
-import open3d as o3d
 from plyfile import PlyData
 from pyproj import Transformer, CRS
 import laspy
 import gc
-import dask.dataframe as dd
-import dask.array as da
-
-# TODO: Use variable mapping file to give column headers in df
-# TODO: the column headers will be the variable names in the file
-# TODO: add logging for each variable mapped and each variable not mapped
+#import dask.dataframe as dd
+#import dask.array as da
 
 def combine_dataframes(dfs):
     '''
@@ -50,28 +45,39 @@ def get_ply_comment(plyfile):
         raise IOError("Didn't find end of header. This can't be a valid PLY file.")
 
 
-def get_cf_crs(ply_filepath=None):
+def get_cf_crs(ply_filepath=None, proj4str=None):
     """
     Get a dictionary of variable attributes to write to the CRS variable
     From a PROJ.4 string in the comment in the PLY file header
     """
+    errors = []
+    warnings = []
+
     if ply_filepath:
-        comment_str = get_ply_comment(ply_filepath)
-        # get projection string from the comment
-        ind_crs = comment_str.find("utm_crs")
-        if ind_crs == -1:
-            return None
+        try:
+            comment_str = get_ply_comment(ply_filepath)
+            # get projection string from the comment
+            ind_crs = comment_str.find("utm_crs")
+            if ind_crs == -1:
+                return None
 
-        proj4str = comment_str[ind_crs:].split(";")[0].split("utm_crs")[1]
-        proj4str = proj4str[proj4str.find("=")+1:]
-        crs = CRS.from_proj4(proj4str)
+            proj4str = comment_str[ind_crs:].split(";")[0].split("utm_crs")[1]
+            proj4str = proj4str[proj4str.find("=")+1:]
+            crs = CRS.from_proj4(proj4str)
+            cf_crs = crs.to_cf()
+        except:
+            warnings.append("Unable to compute CRS from proj4str in comments of header in PLY file. This is not required if latitude and longitude are already in the PLY file. You can alternatively use the proj4str or crs_config arguments.")
+    elif proj4str:
+        try:
+            crs = CRS.from_proj4(proj4str)
+            cf_crs = crs.to_cf()
+        except:
+            errors.append("Unable to compute CRS from proj4str provided")
     else:
-        # TODO: generalise this (or code below) to get from some argument or config file
-        crs = CRS.from_proj4('+proj=utm +zone=33 +datum=WGS84 +units=m +no_defs')
+        cf_crs = None
+        errors.append("Couldn't find proj4str to compute CRS variable from")
 
-    print(crs)
-    cf_crs = crs.to_cf()
-    return cf_crs
+    return cf_crs, errors, warnings
 
 
 def utm_to_latlon(x, y, cf_crs):

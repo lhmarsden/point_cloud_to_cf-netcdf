@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 import netCDF4 as nc
-from datetime import datetime
 import numpy as np
-import pyproj
-import yaml
+import logging
 
-#TODO: add logging for each variable written
+logger = logging.getLogger(__name__)
 
 class NetCDF:
 
@@ -25,13 +23,13 @@ class NetCDF:
         for attr, value in cf_crs.items():
             crs.setncattr(attr, value)
 
-    def write_coordinate_variables(self, ply_df, wavelength_df, variable_mapping):
+    def write_coordinate_variables(self, pc_df, wavelength_df, variable_mapping):
 
         if wavelength_df is not None and not wavelength_df.empty:
             num_points, num_bands = wavelength_df.shape
             wavelengths = wavelength_df.columns
         else:
-            num_points = len(ply_df)
+            num_points = len(pc_df)
             num_bands = None
             wavelengths = None
 
@@ -45,6 +43,7 @@ class NetCDF:
         point_var.setncattr('long_name', 'Arbitrary counter for number of points in the point cloud')
         point_var.setncattr('standard_name', 'number_of_observations')
         point_var.setncattr('coverage_content_type', 'coordinate')
+        logger.info('Wrote a coordinate variable for each point')
 
         if num_bands:
             # Define a dimension and coordinate variable for the wavelength bands
@@ -56,190 +55,31 @@ class NetCDF:
             wavelength_var.setncattr('long_name', 'Spectral band')
             wavelength_var.setncattr('standard_name', 'radiation_wavelength')
             wavelength_var.setncattr('coverage_content_type', 'coordinate')
+            logger.info('Wrote a coordinate variable for each wavelength band')
 
-    def write_1d_data(self, ply_df, variable_mapping):
+    def write_1d_data(self, pc_df, variable_mapping):
 
-        # Check and initialise the longitude variable
-        if 'longitude' in ply_df.columns:
-            longitude = self.ncfile.createVariable('longitude', 'f4', ('point',), zlib=True, complevel=1)
-            # Add values to the longitude variable
-            longitude[:] = ply_df['longitude']
-            # Assign longitude variable attributes
-            longitude.setncattr('units', 'degrees_east')
-            longitude.setncattr('long_name', 'longitude')
-            longitude.setncattr('standard_name', 'longitude')
-            longitude.setncattr('axis', 'X')
-            longitude.setncattr('valid_range', [-180.0, 180.0])
-            longitude.setncattr('coverage_content_type', 'coordinate')
-
-        # Check and initialise the latitude variable
-        if 'latitude' in ply_df.columns:
-            latitude = self.ncfile.createVariable('latitude', 'f4', ('point',), zlib=True, complevel=1)
-            # Add values to the latitude variable
-            latitude[:] = ply_df['latitude']
-            # Assign latitude variable attributes
-            latitude.setncattr('units', 'degrees_north')
-            latitude.setncattr('long_name', 'latitude')
-            latitude.setncattr('standard_name', 'latitude')
-            latitude.setncattr('axis', 'Y')
-            latitude.setncattr('valid_range', [-90.0, 90.0])
-            latitude.setncattr('coverage_content_type', 'coordinate')
-
-        # Check and initialise the altitude variable
-        if 'altitude' in ply_df.columns:
-            altitude = self.ncfile.createVariable('altitude', 'f4', ('point',), zlib=True, complevel=1)
-            # Add values to the altitude variable
-            altitude[:] = ply_df['altitude']
-            # Assign altitude variable attributes
-            altitude.setncattr('units', 'meters')
-            altitude.setncattr('long_name', 'geometric height above geoid')
-            altitude.setncattr('standard_name', 'altitude')
-            altitude.setncattr('positive', 'up')
-            altitude.setncattr('axis', 'Z')
-            altitude.setncattr('valid_range', [-10000.0, 10000.0])
-            altitude.setncattr('coverage_content_type', 'coordinate')
-
-        # Check and initialise the x variable
-        if 'X' in ply_df.columns or 'x' in ply_df.columns:
-            x_column = 'X' if 'X' in ply_df.columns else 'x'
-            x = self.ncfile.createVariable('X', 'f4', ('point',), zlib=True, complevel=1)
-            # Add values to the x variable
-            x[:] = ply_df[x_column]
-            # Assign x variable attributes
-            x.setncattr('units', 'meters')
-            x.setncattr('long_name', 'X coordinate')
-            x.setncattr('standard_name', 'projection_x_coordinate')
-            x.setncattr('grid_mapping', 'crs')
-            x.setncattr('coverage_content_type', 'coordinate')
-
-        # Check and initialise the y variable
-        if 'Y' in ply_df.columns or 'y' in ply_df.columns:
-            y_column = 'Y' if 'Y' in ply_df.columns else 'y'
-            y = self.ncfile.createVariable('Y', 'f4', ('point',), zlib=True, complevel=1)
-            # Add values to the y variable
-            y[:] = ply_df[y_column]
-            # Assign y variable attributes
-            y.setncattr('units', 'meters')
-            y.setncattr('long_name', 'Y coordinate')
-            y.setncattr('standard_name', 'projection_y_coordinate')
-            y.setncattr('grid_mapping', 'crs')
-            y.setncattr('coverage_content_type', 'coordinate')
-
-        # Check and initialise the z variable
-        if 'Z' in ply_df.columns or 'z' in ply_df.columns:
-            z_column = 'Z' if 'Z' in ply_df.columns else 'z'
-            z = self.ncfile.createVariable('Z', 'f4', ('point',), zlib=True, complevel=1)
-            # Add values to the z variable
-            z[:] = ply_df[z_column]
-            # Assign z variable attributes
-            z.setncattr('units', 'meters')
-            z.setncattr('long_name', 'Z coordinate')
-            z.setncattr('standard_name', 'altitude')
-            z.setncattr('grid_mapping', 'crs')
-            z.setncattr('coverage_content_type', 'coordinate')
-
-        # Check and initialise the red variable
-        if 'red' in ply_df.columns:
-            red = self.ncfile.createVariable('red', 'f4', ('point',), zlib=True, complevel=1)
-            # Add values to the red variable
-            red[:] = ply_df['red']
-            # Assign red variable attributes
-            red.setncattr('units', '1')
-            red.setncattr('valid_min', 0)
-            red.setncattr('valid_max', 65535)
-            red.setncattr('long_name', 'red channel (normalised to 16-bit integer)')
-            red.setncattr('coverage_content_type', 'physicalMeasurement')
-            if 'latitude' in ply_df.columns and 'longitude' in ply_df.columns:
-                red.setncattr('coordinates', 'latitude longitude')
-
-        # Check and initialise the green variable
-        if 'green' in ply_df.columns:
-            green = self.ncfile.createVariable('green', 'f4', ('point',), zlib=True, complevel=1)
-            # Add values to the green variable
-            green[:] = ply_df['green']
-            # Assign green variable attributes
-            green.setncattr('units', '1')
-            green.setncattr('valid_min', 0)
-            green.setncattr('valid_max', 65535)
-            green.setncattr('long_name', 'green channel (normalised to 16-bit integer)')
-            green.setncattr('coverage_content_type', 'physicalMeasurement')
-            if 'latitude' in ply_df.columns and 'longitude' in ply_df.columns:
-                green.setncattr('coordinates', 'latitude longitude')
-
-        # Check and initialise the blue variable
-        if 'blue' in ply_df.columns:
-            blue = self.ncfile.createVariable('blue', 'f4', ('point',), zlib=True, complevel=1)
-            # Add values to the blue variable
-            blue[:] = ply_df['blue']
-            # Assign blue variable attributes
-            blue.setncattr('units', '1')
-            blue.setncattr('valid_min', 0)
-            blue.setncattr('valid_max', 65535)
-            blue.setncattr('long_name', 'blue channel (normalised to 16-bit integer)')
-            blue.setncattr('coverage_content_type', 'physicalMeasurement')
-            if 'latitude' in ply_df.columns and 'longitude' in ply_df.columns:
-                blue.setncattr('coordinates', 'latitude longitude')
-
-        # Check and initialise the nomals
-        # TODO: Check whether these should be written to the NetCDF file
-        if 'nx' in ply_df.columns:
-            nx = self.ncfile.createVariable('nx', 'f4', ('point',), zlib=True, complevel=1)
-            nx[:] = ply_df['nx']
-            nx.setncattr('units', '1')
-            nx.setncattr('long_name', 'terrain normal vector, x channel')
-            nx.setncattr('coverage_content_type', 'physicalMeasurement')
-            if 'latitude' in ply_df.columns and 'longitude' in ply_df.columns:
-                nx.setncattr('coordinates', 'latitude longitude')
-        if 'ny' in ply_df.columns:
-            ny = self.ncfile.createVariable('ny', 'f4', ('point',), zlib=True, complevel=1)
-            ny[:] = ply_df['ny']
-            ny.setncattr('units', '1')
-            ny.setncattr('long_name', 'terrain normal vector, y channel')
-            ny.setncattr('coverage_content_type', 'physicalMeasurement')
-            if 'latitude' in ply_df.columns and 'longitude' in ply_df.columns:
-                ny.setncattr('coordinates', 'latitude longitude')
-        if 'nz' in ply_df.columns:
-            nz = self.ncfile.createVariable('nz', 'f4', ('point',), zlib=True, complevel=1)
-            nz[:] = ply_df['nz']
-            nz.setncattr('units', '1')
-            nz.setncattr('long_name', 'terrain normal vector, z channel')
-            nz.setncattr('coverage_content_type', 'physicalMeasurement')
-            if 'latitude' in ply_df.columns and 'longitude' in ply_df.columns:
-                nz.setncattr('coordinates', 'latitude longitude')
-
-        # Variables from Oliver's LAS files
-        if 'scan_angle_rank' in ply_df.columns:
-            scanangle = self.ncfile.createVariable('scan_angle_rank', 'i4', ('point',), zlib=True, complevel=1)
-            scanangle[:] = ply_df['scan_angle_rank']
-            scanangle.setncattr('units', 'degrees')
-            scanangle.setncattr('long_name', 'Scan angle relative to nadir')
-            scanangle.setncattr('valid_min', -90)
-            scanangle.setncattr('valid_max', 90)
-            # scanangle.setncattr('standard_name', '')
-            scanangle.setncattr('coverage_content_type', 'physicalMeasurement')
-            if 'latitude' in ply_df.columns and 'longitude' in ply_df.columns:
-                scanangle.setncattr('coordinates', 'latitude longitude')
-
-        if 'gps_time' in ply_df.columns:
-            # TODO: Need to convert into CF acceptable time format
-            gps_time = self.ncfile.createVariable('gps_time', 'i4', ('point',), zlib=True, complevel=1)
-            gps_time[:] = ply_df['gps_time']
-            gps_time.setncattr('units', 'seconds since 1980-01-06 00:00:00 UTC')
-            gps_time.setncattr('long_name', 'Time at when the point was measured')
-            gps_time.setncattr('standard_name', 'time')
-            gps_time.setncattr('coverage_content_type', 'coordinate')
-            if 'latitude' in ply_df.columns and 'longitude' in ply_df.columns:
-                gps_time.setncattr('coordinates', 'latitude longitude')
-
-        if 'intensity' in ply_df.columns:
-            intensity = self.ncfile.createVariable('intensity', 'i4', ('point',), zlib=True, complevel=1)
-            intensity[:] = ply_df['intensity']
-            intensity.setncattr('units', '1')
-            intensity.setncattr('long_name', 'strength of returning signal to the LiDAR (normalised to 16-bit integer)')
-            # intensity.setncattr('standard_name', '')
-            intensity.setncattr('coverage_content_type', 'physicalMeasurement')
-            if 'latitude' in ply_df.columns and 'longitude' in ply_df.columns:
-                intensity.setncattr('coordinates', 'latitude longitude')
+        # Loop through columns in input data
+        for col in pc_df.columns:
+            # Loop through variables in mapping configuration file
+            for variable in variable_mapping.keys():
+                if 'possible_names' in variable_mapping[variable].keys():
+                    # Matching input data to variable in config file with metadata
+                    if col in variable_mapping[variable]['possible_names']:
+                        # Initialising variable
+                        netcdf_variable = self.ncfile.createVariable(
+                            variable,
+                            variable_mapping[variable]['dtype'],
+                            ('point',),
+                            zlib=True,
+                            complevel=1
+                            )
+                        # Writing data to variable
+                        netcdf_variable[:] = pc_df[col]
+                        # Writing variable attributes
+                        for attribute, value in variable_mapping[variable]['attributes'].items():
+                            netcdf_variable.setncattr(attribute, value)
+                        logger.info(f'Data and metadata written to {variable} variable')
 
     def write_2d_data(self, wavelength_df, variable_mapping):
 
@@ -250,13 +90,10 @@ class NetCDF:
         intensity[:] = wavelength_df
 
         # Assign intensity variable attributes
-        intensity.setncattr('units', 'W m-2 sr-1 m-1')
-        intensity.setncattr('long_name', 'Spectral intensity')
-        intensity.setncattr('standard_name', 'toa_outgoing_radiance_per_unit_wavelength')
-        intensity.setncattr('coverage_content_type', 'physicalMeasurement')
+        for attribute, value in variable_mapping['intensity']['attributes'].items():
+            intensity.setncattr(attribute, value)
 
-        if 'latitude' in self.ncfile.variables and 'longitude' in self.ncfile.variables:
-            intensity.setncattr('coordinates', 'latitude longitude')
+        logger.info('2D intensity data and metadata written to file')
 
     def assign_global_attributes(self,global_attributes):
         for attribute, value in global_attributes.items():
@@ -274,24 +111,21 @@ class NetCDF:
         self.ncfile.close()
 
 
-def create_netcdf(ply_df, wavelength_df, variable_mapping, output_filepath, global_attributes, cf_crs):
+def create_netcdf(pc_df, wavelength_df, variable_mapping, output_filepath, global_attributes, cf_crs):
     '''
-    ply_df : pandas dataframe with columns including latitude, longitude, z
+    pc_df : pandas dataframe with columns including latitude, longitude, z
     wavelength_df: frequency bands and intensity values. None if not provided.
     global_attributes : python dictionary of global attributes
     output_filepath: where to write the netcdf file
     cf_crs: Python dictionary of the key value pairs for the variable attributes of the CRS variable.
     variable_mapping: Python dictionary containing the variable names and attributes
     '''
-    #TODO: The line number (px, py) needs to be written to the CF-NetCDF file to be able to recreate the PLY and HDR
-    # This could be stored as a variable maybe
     netcdf = NetCDF(output_filepath)
-    netcdf.write_coordinate_variables(ply_df,wavelength_df,variable_mapping)
+    netcdf.write_coordinate_variables(pc_df,wavelength_df,variable_mapping)
     if cf_crs:
         netcdf.define_grid_mapping(cf_crs)
-    netcdf.write_1d_data(ply_df, variable_mapping)
+    netcdf.write_1d_data(pc_df, variable_mapping)
     if wavelength_df is not None and not wavelength_df.empty:
-        # TODO: variable mapping currently only written for 1D, not hyspex
         netcdf.write_2d_data(wavelength_df, variable_mapping)
     netcdf.assign_global_attributes(global_attributes)
     netcdf.close()

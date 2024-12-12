@@ -94,6 +94,7 @@ red: # Name of variable to be used in NetCDF file
     valid_min: 0
     valid_max: 65535
     long_name: 'red channel (normalised to 16-bit integer)'
+    standard_name: observed_normalised_red_wavelength_intensity_of_point
     coverage_content_type: 'physicalMeasurement'
 
 green: # Name of variable to be used in NetCDF file
@@ -106,6 +107,7 @@ green: # Name of variable to be used in NetCDF file
     valid_min: 0
     valid_max: 65535
     long_name: 'green channel (normalised to 16-bit integer)'
+    standard_name: observed_normalised_green_wavelength_intensity_of_point
     coverage_content_type: 'physicalMeasurement'
 
 blue: # Name of variable to be used in NetCDF file
@@ -118,6 +120,7 @@ blue: # Name of variable to be used in NetCDF file
     valid_min: 0
     valid_max: 65535
     long_name: 'blue channel (normalised to 16-bit integer)'
+    standard_name: observed_normalised_blue_wavelength_intensity_of_point
     coverage_content_type: 'physicalMeasurement'
 
 nx: # Name of variable to be used in NetCDF file
@@ -129,6 +132,7 @@ nx: # Name of variable to be used in NetCDF file
     units: '1'
     long_name: 'terrain normal vector, x channel'
     coverage_content_type: 'physicalMeasurement'
+    standard_name: x_component_of_surface_outward_normal_vector
 
 ny: # Name of variable to be used in NetCDF file
   dtype: 'f4'
@@ -139,6 +143,7 @@ ny: # Name of variable to be used in NetCDF file
     units: '1'
     long_name: 'terrain normal vector, y channel'
     coverage_content_type: 'physicalMeasurement'
+    standard_name: y_component_of_surface_outward_normal_vector
 
 nz: # Name of variable to be used in NetCDF file
   dtype: 'f4'
@@ -149,6 +154,7 @@ nz: # Name of variable to be used in NetCDF file
     units: '1'
     long_name: 'terrain normal vector, z channel'
     coverage_content_type: 'physicalMeasurement'
+    standard_name: z_component_of_surface_outward_normal_vector
 
 vx: # Name of variable to be used in NetCDF file
   dtype: 'f4'
@@ -157,7 +163,7 @@ vx: # Name of variable to be used in NetCDF file
   attributes: # Variable attributes to be written to NetCDF file for the variable
     units: '1'
     long_name: 'sensor view vector, x channel'
-    standard_name: 'sensor_to_point_direction_x_component'
+    standard_name: 'x_component_of_vector_away_from_instrument'
     coverage_content_type: 'physicalMeasurement'
 
 vy: # Name of variable to be used in NetCDF file
@@ -167,7 +173,7 @@ vy: # Name of variable to be used in NetCDF file
   attributes: # Variable attributes to be written to NetCDF file for the variable
     units: '1'
     long_name: 'sensor view vector, y channel'
-    standard_name: 'sensor_to_point_direction_y_component'
+    standard_name: 'y_component_of_vector_away_from_instrument'
     coverage_content_type: 'physicalMeasurement'
 
 vz: # Name of variable to be used in NetCDF file
@@ -177,10 +183,9 @@ vz: # Name of variable to be used in NetCDF file
   attributes: # Variable attributes to be written to NetCDF file for the variable
     units: '1'
     long_name: 'sensor view vector, z channel'
-    standard_name: 'sensor_to_point_direction_z_component'
+    standard_name: 'z_component_of_vector_away_from_instrument'
     coverage_content_type: 'physicalMeasurement'
 
-# TODO check which is pixel and line number out of px, py
 px: # Name of variable to be used in NetCDF file
   dtype: 'i4'
   possible_names: # Possible names of variable in PLY or LAS file
@@ -205,12 +210,11 @@ scan_angle_rank: # Name of variable to be used in NetCDF file
     - scan_angle_rank
     - scan_angle
   attributes: # Variable attributes to be written to NetCDF file for the variable
-    # TODO: Propose standard_name
     units: 'degrees'
     long_name: 'Scan angle relative to nadir'
     valid_min: -90
     valid_max: 90
-    coverage_content_type: 'physicalMeasurement'
+    coverage_content_type: 'coordinate'
 
 gps_time: # Name of variable to be used in NetCDF file
   dtype: 'i4'

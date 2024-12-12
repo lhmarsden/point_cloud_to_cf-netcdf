@@ -1,6 +1,7 @@
 import json
 import os
 import yaml
+import toml
 import numpy as np
 from lib.utils import validate_time_format
 from datetime import datetime, timezone
@@ -63,7 +64,14 @@ class GlobalAttributes:
     def read_global_attributes(self, arg):
         """Determine if the argument is a file path (YAML) or a JSON string and read global attributes accordingly."""
         if os.path.isfile(arg):
-            self.dict = self._read_from_yaml_file(arg)
+            # Extract the file extension
+            _, ext = os.path.splitext(arg)
+
+            # Determine file type based on extension
+            if ext in ['.yaml', '.yml']:
+                self.dict = self._read_from_yaml_file(arg)
+            elif ext == '.toml':
+                self.dict = self._read_from_toml_file(arg)
         else:
             self.dict = self._read_from_json_string(arg)
 
@@ -73,6 +81,28 @@ class GlobalAttributes:
             data = yaml.safe_load(file)
         attributes = {key: value.get('value', None) for key, value in data.items() if value.get('value')}
         return attributes
+
+    def _read_from_toml_file(self, filepath, sep='_'):
+        """Read global attributes from a TOML file."""
+        # Open and load the TOML file
+        with open(filepath, 'r') as f:
+            toml_data = toml.load(f)
+
+        # Flatten the TOML data into a dictionary, ignoring parent keys
+        flat_dict = {}
+        stack = [toml_data]
+
+        while stack:
+            current_dict = stack.pop()
+            for key, value in current_dict.items():
+                if isinstance(value, dict):
+                    # If it's a nested dictionary, add its values to the stack
+                    stack.append(value)
+                else:
+                    # If it's not a dictionary, add the value to the flat_dict
+                    flat_dict[key] = value
+
+        return flat_dict
 
     def _read_from_json_string(self, json_string):
         """Parse JSON string."""
