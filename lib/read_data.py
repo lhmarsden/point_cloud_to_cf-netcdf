@@ -7,6 +7,13 @@ import laspy
 import gc
 #import dask.dataframe as dd
 #import dask.array as da
+import logging
+import os
+import re
+from lib.hyspex_calibration import HyspexRad
+
+
+logger = logging.getLogger(__name__)
 
 def combine_dataframes(dfs):
     '''
@@ -20,7 +27,6 @@ def combine_dataframes(dfs):
         del chunk
         # Force garbage collection
         gc.collect()
-        # TODO: What if the LAS file includes latitude and longitude?
 
     return combined_df
 
@@ -219,14 +225,58 @@ def ply_to_df(ply_filepath, cf_crs, variable_mapping, xcoord=None, ycoord=None, 
 
     return combined_df
 
-def read_hyspex(hdr_filepath):
-    # TODO: NORCE will send a python function to calibrate these values.
-    # Function to read Hyspex image and flatten it to a pandas dataframe
+def read_hyspex(hdr_filepath, need_to_calibrate=False):
+
     hdr = sp.envi.open(hdr_filepath)
     wavelengths = hdr.bands.centers
 
-    spectral_data = hdr.load()
-    spectral_data_flattened = spectral_data.reshape(-1, hdr.nbands) # Flatten the data
-    # Columns: wavelengths, 1 row per point
-    df = pd.DataFrame(spectral_data_flattened, columns=wavelengths)
-    return df
+    if need_to_calibrate == True:
+        logger.info('Calibrating hyspex data')
+        number_of_lines = None
+        number_of_samples = None
+        interleave = None
+
+        # Read the file and extract the required fields
+        with open(hdr_filepath, 'r') as hdr_file:
+            for line in hdr_file:
+                if re.match(r"^lines\s*=", line):
+                    number_of_lines = int(line.split('=')[1].strip())
+                elif re.match(r"^samples\s*=", line):
+                    number_of_samples = int(line.split('=')[1].strip())
+                elif re.match(r"^interleave\s*=", line):
+                    interleave = line.split('=')[1].strip()
+
+        hyspex_file = os.path.splitext(hdr_filepath)[0] + ".hyspex"
+        hrad = HyspexRad(hyspex_file)
+
+        # Create an empty list to store dataframes
+        dataframes = []
+
+        if interleave == 'bil':
+            # Process line by line
+            for line in range(number_of_lines):
+                logger.info(f'Calibrating line {line} of {number_of_lines}')
+                # Create the line and sample indices for the current line
+                line_index = [line] * number_of_samples
+                sample_index = list(range(number_of_samples))
+
+                # Calibrate the spectrum for the current line
+                calibrated_line = hrad.calibrate_spectrum(line_index, sample_index)
+                calibrated_line_flattened = calibrated_line.reshape(-1, hdr.nbands)
+                df = pd.DataFrame(calibrated_line_flattened, columns=wavelengths)
+                dataframes.append(df)
+
+            logger.info('Combining calibrated hyspex data into a single dataframe')
+            # Concatenate all dataframes into one
+            combined_df = pd.concat(dataframes, ignore_index=True)
+
+            return combined_df
+        else:
+            return None
+    else:
+        logger.info('No calibration will be performed to hyspex data')
+        spectral_data = hdr.load()
+        spectral_data_flattened = spectral_data.reshape(-1, hdr.nbands) # Flatten the data
+        # Columns: wavelengths, 1 row per point
+        df = pd.DataFrame(spectral_data_flattened, columns=wavelengths)
+        return df

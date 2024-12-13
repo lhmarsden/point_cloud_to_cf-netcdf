@@ -63,6 +63,14 @@ def main():
     group.add_argument('-ply', '--ply_filepath', type=str, help='Path to the input ply file.')
     group.add_argument('-las', '--las_filepath', type=str, help='Path to the input las file.')
     parser.add_argument('-hdr', '--hdr_filepath', type=str, default=None, help='Path to the input hdr file.')
+    parser.add_argument(
+        '-hyspex_cal',
+        '--need_to_calibrate_hyspex',
+        type=str,
+        default='n',
+        choices=['y', 'n'],
+        help='Does the hyspex data need to be calibrated? Enter y or n.'
+    )
     parser.add_argument('-ga', '--global_attributes', type=str, required=True, help='Should be either 1) a JSON string with key/value pairs for global attributes, 2) a yaml file including this information 3) A toml file including this information')
     parser.add_argument('-vm', '--variable_mapping', type=str, required=True, help='Should be filepath to a yaml file including this information')
 
@@ -108,7 +116,6 @@ def main():
 
     if args.crs_config and args.proj4str:
         parser.error("You cannot specify both --crs_config and --proj4str. Please provide only one or neither if the proj4 string is in the comment in the header of the PLY file.")
-
 
     # Check conditions for X, Y, Z group
     if args.xcoord or args.ycoord or args.zcoord:
@@ -185,9 +192,6 @@ def main():
     #     logger.info("Checking what variables are in the LAS file")
     #     variable_names = list_variables_in_las()
 
-    # TODO: Remove this when ready to process hyspex
-    args.hdr_filepath = None
-
     if args.hdr_filepath:
         variable_names = variable_names + ['intensity']
 
@@ -213,8 +217,12 @@ def main():
         sys.exit(1)
 
     if args.hdr_filepath:
+        if args.need_to_calibrate_hyspex == 'y':
+            calibrate = True
+        else:
+            calibrate = False
         logger.info("Trying to load the data from the hyspex file and write them to a pandas dataframe")
-        wavelength_df = read_hyspex(args.hdr_filepath)
+        wavelength_df = read_hyspex(args.hdr_filepath, need_to_calibrate=calibrate)
         logger.info(f"Data from {args.hdr_filepath} loaded in successfully")
     else:
         wavelength_df = None
