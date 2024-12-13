@@ -217,16 +217,7 @@ def main():
         logger.error("Error: No input file provided")
         sys.exit(1)
 
-    if args.hdr_filepath:
-        if args.need_to_calibrate_hyspex == 'y':
-            calibrate = True
-        else:
-            calibrate = False
-        logger.info("Trying to load the data from the hyspex file and write them to a pandas dataframe")
-        wavelength_df = read_hyspex(args.hdr_filepath, need_to_calibrate=calibrate)
-        logger.info(f"Data from {args.hdr_filepath} loaded in successfully")
-    else:
-        wavelength_df = None
+    chunk_size, chunk_errors = define_chunk_size(pc_df,args.hdr_filepath)
 
     if cf_crs is None:
         # Ensure the DataFrame has latitude and longitude columns
@@ -246,8 +237,6 @@ def main():
     # TODO: Comment out line below when ready to check global attributes
     ga_errors, ga_warnings = [], [] # Use this line to bypass check of global attributes
 
-    chunk_size, chunk_errors = define_chunk_size(pc_df,args.hdr_filepath)
-
     errors = data_errors + ga_errors + reformatting_errors + vm_errors + crs_errors + chunk_errors
     warnings = data_warnings + ga_warnings + reformatting_warnings + vm_warnings + crs_warnings
 
@@ -261,7 +250,18 @@ def main():
             logger.error(error)
         logger.error('No NetCDF file has been created. Please correct the errors and try again.\n\n')
     else:
-        logger.info("Data and metadata read in a processed without error")
+        logger.info("Point cloud data and metadata read in a processed without error")
+        if args.hdr_filepath:
+            if args.need_to_calibrate_hyspex == 'y':
+                calibrate = True
+            else:
+                calibrate = False
+            logger.info("Trying to load the data from the hyspex file and write them to a pandas dataframe")
+            wavelength_df = read_hyspex(args.hdr_filepath, need_to_calibrate=calibrate)
+            logger.info(f"Data from {args.hdr_filepath} loaded in successfully")
+        else:
+            wavelength_df = None
+
         logger.info("Trying to create CF-NetCDF file")
         # Convert the DataFrame to a NetCDF file
         create_netcdf(pc_df, wavelength_df, variable_mapping.dict, args.output_filepath, global_attributes.dict, cf_crs, chunk_size)

@@ -13,7 +13,6 @@ def define_chunk_size(pc_df, hdr_filepath):
     errors = []
     try:
         if hdr_filepath:
-            hdr = sp.envi.open(hdr_filepath)
             number_of_samples = None
             interleave = None
 
@@ -22,9 +21,13 @@ def define_chunk_size(pc_df, hdr_filepath):
                 for line in hdr_file:
                     if re.match(r"^samples\s*=", line):
                         number_of_samples = int(line.split('=')[1].strip())
+                    elif re.match(r"^interleave\s*=", line):
+                        interleave = line.split('=')[1].strip()
             if interleave == 'bil': # Data organised line by line
                 logger.info(f'Data will be divided into chunks line by line')
                 chunk_size = number_of_samples
+            else:
+                chunk_size = None
         else:
             num_points = len(pc_df)
             if num_points > 2000000:
