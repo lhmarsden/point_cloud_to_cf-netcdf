@@ -3,6 +3,7 @@ from lib.read_data import read_hyspex, ply_to_df, las_to_df, get_cf_crs, list_va
 from lib.create_netcdf import create_netcdf
 from lib.global_attributes import GlobalAttributes
 from lib.variable_mapping import VariableMapping
+from lib.utils import define_chunk_size
 import argparse
 import yaml
 import toml
@@ -245,7 +246,9 @@ def main():
     # TODO: Comment out line below when ready to check global attributes
     ga_errors, ga_warnings = [], [] # Use this line to bypass check of global attributes
 
-    errors = data_errors + ga_errors + reformatting_errors + vm_errors + crs_errors
+    chunk_size, chunk_errors = define_chunk_size(pc_df,args.hdr_filepath)
+
+    errors = data_errors + ga_errors + reformatting_errors + vm_errors + crs_errors + chunk_errors
     warnings = data_warnings + ga_warnings + reformatting_warnings + vm_warnings + crs_warnings
 
     if len(warnings) > 0:
@@ -261,7 +264,7 @@ def main():
         logger.info("Data and metadata read in a processed without error")
         logger.info("Trying to create CF-NetCDF file")
         # Convert the DataFrame to a NetCDF file
-        create_netcdf(pc_df, wavelength_df, variable_mapping.dict, args.output_filepath, global_attributes.dict, cf_crs)
+        create_netcdf(pc_df, wavelength_df, variable_mapping.dict, args.output_filepath, global_attributes.dict, cf_crs, chunk_size)
         logger.info(f'File created: {args.output_filepath}')
 
 if __name__ == '__main__':
