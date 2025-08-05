@@ -2,6 +2,7 @@
 import netCDF4 as nc
 import numpy as np
 import logging
+from lib.utils import scale_to_integers
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +90,7 @@ class NetCDF:
         # Initialize the variable
         intensity = self.ncfile.createVariable(
             'intensity',
-            'f4',
+            'i4',
             ('point','band'),
             zlib=True,
             complevel=1, #TODO: Test complevel on file size
@@ -97,11 +98,15 @@ class NetCDF:
             )
 
         # Add values to the intensity variable
-        intensity[:] = wavelength_df
+        wavelength_array = wavelength_df.to_numpy()
+        
+        intensity[:], scale_factor = scale_to_integers(wavelength_array)
 
         # Assign intensity variable attributes
         for attribute, value in variable_mapping['intensity']['attributes'].items():
             intensity.setncattr(attribute, value)
+        
+        intensity.setncattr('scale_factor', scale_factor)
 
         logger.info('2D intensity data and metadata written to file')
 
@@ -131,7 +136,7 @@ def create_netcdf(pc_df, wavelength_df, variable_mapping, output_filepath, globa
     variable_mapping: Python dictionary containing the variable names and attributes
     chunk_size: Chunk size to divide data into along the point dimension
     '''
-    # TODO: Line by line chunking required, test file is 32 Gb
+    # TODO: Need to reduce file size (32 Gb). Compression didn't help. Precision of values, scale_factor could be useful. Then store data in int32 or int16.
     netcdf = NetCDF(output_filepath)
     netcdf.write_coordinate_variables(pc_df,wavelength_df,variable_mapping)
     if cf_crs:

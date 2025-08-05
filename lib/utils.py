@@ -1,6 +1,7 @@
 import re
 import spectral as sp
 import logging
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -41,3 +42,31 @@ def define_chunk_size(pc_df, hdr_filepath):
         chunk_size = None
         errors = ['Error calculating chunk size to divide data into']
         return chunk_size, errors
+
+def scale_to_integers(arr, max_scale=1e6):
+    """
+    Scale a float NumPy array to integers using the smallest power-of-10 scale factor
+    that preserves all precision, up to a sensible limit (default 1e6).
+
+    Parameters:
+        arr (np.ndarray): Input array of type float32.
+        max_scale (int or float): Maximum scale factor to try (e.g. 1e6 for 6 decimal places).
+
+    Returns:
+        scaled_array (np.ndarray): Integer array with preserved precision.
+        scale_factor (int): The scale factor used (e.g. 100000 for 5 decimal places).
+    """
+    if arr.dtype != np.float32:
+        raise TypeError("Input array must be of type float32")
+
+    max_decimal_places = int(np.log10(max_scale)) + 1
+
+    for i in range(max_decimal_places):
+        scale = 10 ** i
+        scaled = arr * scale
+
+        # Check if values are close enough to integers after scaling
+        if np.allclose(scaled, np.round(scaled), rtol=0, atol=1e-6):
+            return np.round(scaled).astype(np.int32), scale
+
+    raise ValueError(f"No suitable scale factor found up to {int(max_scale):,}")
