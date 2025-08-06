@@ -255,7 +255,8 @@ def read_hyspex(hdr_filepath, need_to_calibrate=False):
         if interleave == 'bil':
             # Process line by line
             for line in range(number_of_lines):
-                logger.info(f'Calibrating line {line} of {number_of_lines}')
+                if line % 1000 == 0:
+                    logger.info(f'Calibrating line {line} of {number_of_lines}')
                 # Create the line and sample indices for the current line
                 line_index = [line] * number_of_samples
                 sample_index = list(range(number_of_samples))

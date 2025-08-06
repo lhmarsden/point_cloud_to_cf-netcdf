@@ -43,30 +43,30 @@ def define_chunk_size(pc_df, hdr_filepath):
         errors = ['Error calculating chunk size to divide data into']
         return chunk_size, errors
 
-def scale_to_integers(arr, max_scale=1e6):
+def scale_to_integers(arr: np.ndarray, scale_factor, chunk_size: int = 1_000_000) -> np.ndarray:
     """
-    Scale a float NumPy array to integers using the smallest power-of-10 scale factor
-    that preserves all precision, up to a sensible limit (default 1e6).
-
+    Scales a float32 array to integers by multiplying by 1e6 and rounding.
+    
     Parameters:
-        arr (np.ndarray): Input array of type float32.
-        max_scale (int or float): Maximum scale factor to try (e.g. 1e6 for 6 decimal places).
-
+        arr (np.ndarray): Input array of dtype float32 with values expected in [0, 1].
+        scale_factor: Value of scale_factor attribute to be written in CF-NetCDF file.
+        chunk_size (int): Size of chunks for processing, to manage memory.
+    
     Returns:
-        scaled_array (np.ndarray): Integer array with preserved precision.
-        scale_factor (int): The scale factor used (e.g. 100000 for 5 decimal places).
+        np.ndarray: Array of int32 values representing arr * scale, rounded.
     """
     if arr.dtype != np.float32:
         raise TypeError("Input array must be of type float32")
 
-    max_decimal_places = int(np.log10(max_scale)) + 1
+    n = arr.size
+    arr_flat = arr.ravel()
+    scaled = np.empty_like(arr_flat, dtype=np.int32)
 
-    for i in range(max_decimal_places):
-        scale = 10 ** i
-        scaled = arr * scale
+    scale = 1 / scale_factor
 
-        # Check if values are close enough to integers after scaling
-        if np.allclose(scaled, np.round(scaled), rtol=0, atol=1e-6):
-            return np.round(scaled).astype(np.int32), scale
+    for start in range(0, n, chunk_size):
+        end = start + chunk_size
+        chunk = arr_flat[start:end]
+        scaled[start:end] = np.round(chunk * scale).astype(np.int32)
 
-    raise ValueError(f"No suitable scale factor found up to {int(max_scale):,}")
+    return scaled.reshape(arr.shape)

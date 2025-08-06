@@ -93,19 +93,19 @@ class NetCDF:
             'i4',
             ('point','band'),
             zlib=True,
-            complevel=1, #TODO: Test complevel on file size
+            complevel=9, #TODO: Test complevel on file size
             chunksizes=(chunk_size,num_bands)
             )
 
         # Add values to the intensity variable
         wavelength_array = wavelength_df.to_numpy()
-        
-        intensity[:], scale_factor = scale_to_integers(wavelength_array)
+        scale_factor = 1e-6
+        intensity[:] = scale_to_integers(wavelength_array, scale_factor)
 
         # Assign intensity variable attributes
         for attribute, value in variable_mapping['intensity']['attributes'].items():
             intensity.setncattr(attribute, value)
-        
+
         intensity.setncattr('scale_factor', scale_factor)
 
         logger.info('2D intensity data and metadata written to file')
