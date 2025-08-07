@@ -45,7 +45,7 @@ def is_valid_toml(file_path):
 
 
 def main():
-
+    # TODO: Check line number and pixel number being written the correct way round
     # Log to console
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)
@@ -218,6 +218,8 @@ def main():
         sys.exit(1)
 
     chunk_size, chunk_errors = define_chunk_size(pc_df,args.hdr_filepath)
+    chunk_size = 1800000
+    print('Chunk size:',chunk_size,',df length:',len(pc_df))
 
     if cf_crs is None:
         # Ensure the DataFrame has latitude and longitude columns
