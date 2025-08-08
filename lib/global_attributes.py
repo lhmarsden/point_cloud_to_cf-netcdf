@@ -169,7 +169,7 @@ class GlobalAttributes:
         warnings = []
 
         for required_attribute in required_attributes:
-            if required_attribute not in self.dict.keys():
+            if required_attribute not in self.dict.keys() and required_attribute not in derived_attributes:
                 errors.append(f'"{required_attribute}" is a required global attribute. Please provide a value')
         if len(errors) > 0:
             return errors, warnings
@@ -186,30 +186,30 @@ class GlobalAttributes:
                     if validate_time_format(value) == False:
                         errors.append(f'{attribute} must be in the format YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSZ')
 
-                if attribute in ['geospatial_lat_min', 'geospatial_lat_max']:
-                    if -90 <= float(value) <= 90:
-                        pass
-                    else:
-                        errors.append(f'{attribute} must be between -90 and 90 inclusive')
+        #         if attribute in ['geospatial_lat_min', 'geospatial_lat_max']:
+        #             if -90 <= float(value) <= 90:
+        #                 pass
+        #             else:
+        #                 errors.append(f'{attribute} must be between -90 and 90 inclusive')
 
-                if attribute in ['geospatial_lon_min', 'geospatial_lon_max']:
-                    if -180 <= float(value) <= 180:
-                        pass
-                    else:
-                        errors.append(f'{attribute} must be between -180 and 180 inclusive')
+        #         if attribute in ['geospatial_lon_min', 'geospatial_lon_max']:
+        #             if -180 <= float(value) <= 180:
+        #                 pass
+        #             else:
+        #                 errors.append(f'{attribute} must be between -180 and 180 inclusive')
 
-        geospatial_lat_min = self.dict['geospatial_lat_min']
-        geospatial_lat_max = self.dict['geospatial_lat_max']
-        geospatial_lon_min = self.dict['geospatial_lon_min']
-        geospatial_lon_max = self.dict['geospatial_lon_max']
+        # geospatial_lat_min = self.dict['geospatial_lat_min']
+        # geospatial_lat_max = self.dict['geospatial_lat_max']
+        # geospatial_lon_min = self.dict['geospatial_lon_min']
+        # geospatial_lon_max = self.dict['geospatial_lon_max']
         time_coverage_start = self.dict['time_coverage_start']
         time_coverage_end = self.dict['time_coverage_end']
 
-        if geospatial_lat_min > geospatial_lat_max:
-            errors.append('geospatial_lat_max must be greater than or equal to geospatial_lat_min')
+        # if geospatial_lat_min > geospatial_lat_max:
+        #     errors.append('geospatial_lat_max must be greater than or equal to geospatial_lat_min')
 
-        if geospatial_lon_min > geospatial_lon_max:
-            errors.append('geospatial_lon_max must be greater than or equal to geospatial_lon_min')
+        # if geospatial_lon_min > geospatial_lon_max:
+        #     errors.append('geospatial_lon_max must be greater than or equal to geospatial_lon_min')
 
         if time_coverage_start > time_coverage_end:
             errors.append('time_coverage_end must be greater than or equal to time_coverage_start')

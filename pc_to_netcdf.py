@@ -14,6 +14,46 @@ import math
 
 logger = logging.getLogger(__name__)
 
+def generate_py_ranges(min_py, max_py, chunk_size=5000, penultimate_size=3000, min_remainder=1000):
+    total_lines = max_py - min_py + 1
+    num_full_chunks = total_lines // chunk_size
+    remainder = total_lines % chunk_size
+
+    ranges = []
+
+    # Case 1: remainder is 0 or large enough, just do full chunks + remainder chunk
+    if remainder == 0 or remainder >= min_remainder:
+        for i in range(num_full_chunks):
+            start = min_py + i * chunk_size
+            end = start + chunk_size - 1
+            ranges.append((start, end))
+        # Add remainder chunk if any
+        if remainder > 0:
+            start = min_py + num_full_chunks * chunk_size
+            end = max_py
+            ranges.append((start, end))
+    else:
+        # Case 2: remainder < min_remainder
+        # Adjust penultimate chunk to penultimate_size
+        if num_full_chunks == 0:
+            # Not enough lines for even one full chunk, just one range
+            ranges.append((min_py, max_py))
+        else:
+            # Full chunks except last two
+            for i in range(num_full_chunks - 1):
+                start = min_py + i * chunk_size
+                end = start + chunk_size - 1
+                ranges.append((start, end))
+            # Penultimate chunk with penultimate_size lines
+            penultimate_start = min_py + (num_full_chunks - 1) * chunk_size
+            penultimate_end = penultimate_start + penultimate_size - 1
+            ranges.append((penultimate_start, penultimate_end))
+            # Final chunk is the remainder + (chunk_size - penultimate_size)
+            final_start = penultimate_end + 1
+            final_end = max_py
+            ranges.append((final_start, final_end))
+    return ranges
+
 def is_valid_json(json_string):
     """Check if the string is a valid JSON."""
     try:
@@ -269,23 +309,28 @@ def main():
 
         # Define chunk size
         chunk_size_lines = 5000
+        penultimate_chunk_size = 3000
+        min_final_remainder = 1000
 
         # Get min and max py values
         min_py = pc_df['py'].min()
         max_py = pc_df['py'].max()
 
-        # Calculate how many files will be created
-        num_files = math.ceil((max_py - min_py + 1) / chunk_size_lines)
-        logger.info(f"Creating {num_files} NetCDF files "
-                    f"({chunk_size_lines} py lines per file, py range {min_py} to {max_py}).")
+        # Generate py ranges with adjusted logic
+        py_ranges = generate_py_ranges(min_py, max_py, chunk_size_lines, penultimate_chunk_size, min_final_remainder)
 
-        # Loop over py ranges in steps of chunk_size_lines
-        for start_py in range(min_py, max_py + 1, chunk_size_lines):
-            end_py = min(start_py + chunk_size_lines - 1, max_py)
+        logger.info(f"Creating {len(py_ranges)} NetCDF files with chunk size {chunk_size_lines} "
+                    f"and penultimate chunk size {penultimate_chunk_size} if needed, py range {min_py} to {max_py}.")
 
-            # Filter both dataframes for this py range
+        # Loop over calculated py ranges
+        for start_py, end_py in py_ranges:
+            # Filter dataframes for this py range
             pc_chunk = pc_df[(pc_df['py'] >= start_py) & (pc_df['py'] <= end_py)]
             wavelength_chunk = wavelength_df[(wavelength_df['py'] >= start_py) & (wavelength_df['py'] <= end_py)]
+            wavelength_chunk = wavelength_chunk.copy()
+
+            # Deleting columns not required
+            wavelength_chunk.drop(columns=['py', 'px'], inplace=True)
 
             # Derive attributes for this chunk
             global_attributes.derive(pc_chunk)
