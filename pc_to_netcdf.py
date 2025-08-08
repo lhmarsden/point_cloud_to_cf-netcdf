@@ -326,6 +326,7 @@ def main():
         for start_py, end_py in py_ranges:
             # Filter dataframes for this py range
             pc_chunk = pc_df[(pc_df['py'] >= start_py) & (pc_df['py'] <= end_py)]
+            pc_chunk = pc_chunk.copy()
             wavelength_chunk = wavelength_df[(wavelength_df['py'] >= start_py) & (wavelength_df['py'] <= end_py)]
             wavelength_chunk = wavelength_chunk.copy()
 
