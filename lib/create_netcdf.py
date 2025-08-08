@@ -93,7 +93,7 @@ class NetCDF:
             'i4',
             ('point','band'),
             zlib=True,
-            complevel=9, #TODO: Test complevel on file size
+            complevel=1,
             chunksizes=(chunk_size,num_bands)
             )
 
