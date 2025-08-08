@@ -10,6 +10,7 @@ import toml
 import json
 import sys
 import logging
+import math
 
 logger = logging.getLogger(__name__)
 
@@ -232,7 +233,7 @@ def main():
     global_attributes = GlobalAttributes()
     global_attributes.read_global_attributes(args.global_attributes)
     reformatting_errors, reformatting_warnings = global_attributes.reformat_attributes()
-    global_attributes.derive(pc_df)
+    # TODO: Not deriving global attributes here any more from df so need to update checker
     ga_errors, ga_warnings = global_attributes.check()
     # TODO: Comment out line below when ready to check global attributes
     ga_errors, ga_warnings = [], [] # Use this line to bypass check of global attributes
@@ -262,13 +263,45 @@ def main():
         else:
             wavelength_df = None
 
-        logger.info("Trying to create CF-NetCDF file")
-        # Convert the DataFrame to a NetCDF file
-        # TODO: Divide data in multiples files maybe 5000 lines each
-        # TODO: Check pc_df shape and size vs wavelength_df to do this
+        logger.info("Trying to create CF-NetCDF file(s)")
+        # Convert the DataFrame to NetCDF files
         # TODO: Need to write global attributes. Different per file
-        create_netcdf(pc_df, wavelength_df, variable_mapping.dict, args.output_filepath, global_attributes.dict, cf_crs, chunk_size)
-        logger.info(f'File created: {args.output_filepath}')
+
+        # Define chunk size
+        chunk_size_lines = 5000
+
+        # Get min and max py values
+        min_py = pc_df['py'].min()
+        max_py = pc_df['py'].max()
+
+        # Calculate how many files will be created
+        num_files = math.ceil((max_py - min_py + 1) / chunk_size_lines)
+        logger.info(f"Creating {num_files} NetCDF files "
+                    f"({chunk_size_lines} py lines per file, py range {min_py} to {max_py}).")
+
+        # Loop over py ranges in steps of chunk_size_lines
+        for start_py in range(min_py, max_py + 1, chunk_size_lines):
+            end_py = min(start_py + chunk_size_lines - 1, max_py)
+
+            # Filter both dataframes for this py range
+            pc_chunk = pc_df[(pc_df['py'] >= start_py) & (pc_df['py'] <= end_py)]
+            wavelength_chunk = wavelength_df[(wavelength_df['py'] >= start_py) & (wavelength_df['py'] <= end_py)]
+
+            # Derive attributes for this chunk
+            global_attributes.derive(pc_chunk)
+
+            # Update output filepath
+            base, ext = os.path.splitext(args.output_filepath)
+            output_filepath = f"{base}_lines_{start_py}_to_{end_py}{ext}"
+
+            # Create NetCDF
+            create_netcdf(pc_chunk, wavelength_chunk, variable_mapping.dict, output_filepath, global_attributes.dict, cf_crs, chunk_size)
+
+            logger.info(f'File created: {output_filepath}')
+
+        # global_attributes.derive(pc_df)
+        # create_netcdf(pc_df, wavelength_df, variable_mapping.dict, args.output_filepath, global_attributes.dict, cf_crs, chunk_size)
+        # logger.info(f'File created: {args.output_filepath}')
 
 if __name__ == '__main__':
     main()
