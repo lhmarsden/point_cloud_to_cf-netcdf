@@ -10,7 +10,7 @@ import toml
 import json
 import sys
 import logging
-import math
+import copy
 
 logger = logging.getLogger(__name__)
 
@@ -316,7 +316,6 @@ def main():
         min_py = pc_df['py'].min()
         max_py = pc_df['py'].max()
 
-        # Generate py ranges with adjusted logic
         py_ranges = generate_py_ranges(min_py, max_py, chunk_size_lines, penultimate_chunk_size, min_final_remainder)
 
         logger.info(f"Creating {len(py_ranges)} NetCDF files with chunk size {chunk_size_lines} "
@@ -326,7 +325,6 @@ def main():
         for start_py, end_py in py_ranges:
             # Filter dataframes for this py range
             pc_chunk = pc_df[(pc_df['py'] >= start_py) & (pc_df['py'] <= end_py)]
-            pc_chunk = pc_chunk.copy()
             wavelength_chunk = wavelength_df[(wavelength_df['py'] >= start_py) & (wavelength_df['py'] <= end_py)]
             wavelength_chunk = wavelength_chunk.copy()
 
@@ -334,14 +332,15 @@ def main():
             wavelength_chunk.drop(columns=['py', 'px'], inplace=True)
 
             # Derive attributes for this chunk
-            global_attributes.derive(pc_chunk)
+            global_attributes_chunk = copy.deepcopy(global_attributes)
+            global_attributes_chunk.derive(pc_chunk)
 
             # Update output filepath
             base, ext = os.path.splitext(args.output_filepath)
             output_filepath = f"{base}_lines_{start_py}_to_{end_py}{ext}"
 
             # Create NetCDF
-            create_netcdf(pc_chunk, wavelength_chunk, variable_mapping.dict, output_filepath, global_attributes.dict, cf_crs, chunk_size)
+            create_netcdf(pc_chunk, wavelength_chunk, variable_mapping.dict, output_filepath, global_attributes_chunk.dict, cf_crs, chunk_size)
 
             logger.info(f'File created: {output_filepath}')
 
