@@ -218,8 +218,6 @@ def main():
         sys.exit(1)
 
     chunk_size, chunk_errors = define_chunk_size(pc_df,args.hdr_filepath)
-    chunk_size = 1800000
-    print('Chunk size:',chunk_size,',df length:',len(pc_df))
 
     if cf_crs is None:
         # Ensure the DataFrame has latitude and longitude columns
@@ -266,6 +264,9 @@ def main():
 
         logger.info("Trying to create CF-NetCDF file")
         # Convert the DataFrame to a NetCDF file
+        # TODO: Divide data in multiples files maybe 5000 lines each
+        # TODO: Check pc_df shape and size vs wavelength_df to do this
+        # TODO: Need to write global attributes. Different per file
         create_netcdf(pc_df, wavelength_df, variable_mapping.dict, args.output_filepath, global_attributes.dict, cf_crs, chunk_size)
         logger.info(f'File created: {args.output_filepath}')
 
