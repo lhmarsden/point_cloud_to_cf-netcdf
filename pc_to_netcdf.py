@@ -86,7 +86,6 @@ def is_valid_toml(file_path):
 
 
 def main():
-    # TODO: Check line number and pixel number being written the correct way round
     # Log to console
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)
@@ -113,8 +112,27 @@ def main():
         choices=['y', 'n'],
         help='Does the hyspex data need to be calibrated? Enter y or n.'
     )
-    parser.add_argument('-ga', '--global_attributes', type=str, required=True, help='Should be either 1) a JSON string with key/value pairs for global attributes, 2) a yaml file including this information 3) A toml file including this information')
-    parser.add_argument('-vm', '--variable_mapping', type=str, required=True, help='Should be filepath to a yaml file including this information')
+    parser.add_argument(
+        '-uga', 
+        '--user_global_attributes', 
+        type=str, 
+        required=True, 
+        help='Global attributes defined by user. Should be either 1) a JSON string with key/value pairs for global attributes, 2) a yaml file including this information 3) A toml file including this information'
+        )
+    parser.add_argument(
+        '-mga', 
+        '--met_global_attributes', 
+        type=str, 
+        help='Global attributes defined by MET, a yaml file', 
+        default='config/global_attributes.yml'
+        )
+    parser.add_argument(
+        '-vm', 
+        '--variable_mapping', 
+        type=str, 
+        required=True, 
+        help='Should be filepath to a yaml file including this information'
+        )
 
     # X, Y and Z must all be specified if one is present
     # Allowed values for X, Y, Z
@@ -170,11 +188,11 @@ def main():
             parser.error('X, Y, and Z must each be unique (latitude, longitude, altitude cannot be repeated).')
 
     # Check if the global attributes argument is a valid JSON string, YAML file, or TOML file
-    if is_valid_json(args.global_attributes):
+    if is_valid_json(args.user_global_attributes):
         logger.info("Global attribute provided in JSON string.")
-    elif is_valid_yaml(args.global_attributes):
+    elif is_valid_yaml(args.user_global_attributes):
         logger.info("Global attribute provided in YAML file.")
-    elif is_valid_toml(args.global_attributes):
+    elif is_valid_toml(args.user_global_attributes):
         logger.info("Global attribute provided in TOML file.")
     else:
         logger.error("Global attributes must be provided in a JSON string or TOML or YAML file.")
@@ -271,12 +289,12 @@ def main():
     # Read the global attributes from the specified CSV file
     logger.info("Reading in global attributes")
     global_attributes = GlobalAttributes()
-    global_attributes.read_global_attributes(args.global_attributes)
+    global_attributes.read_global_attributes(args.user_global_attributes, args.met_global_attributes)
+    for key, val in global_attributes.dict.items():
+        print(key, val)
     reformatting_errors, reformatting_warnings = global_attributes.reformat_attributes()
-    # TODO: Not deriving global attributes here any more from df so need to update checker
     ga_errors, ga_warnings = global_attributes.check()
-    # TODO: Comment out line below when ready to check global attributes
-    ga_errors, ga_warnings = [], [] # Use this line to bypass check of global attributes
+    #ga_errors, ga_warnings = [], [] # Use this line to bypass check of global attributes
 
     errors = data_errors + ga_errors + reformatting_errors + vm_errors + crs_errors + chunk_errors
     warnings = data_warnings + ga_warnings + reformatting_warnings + vm_warnings + crs_warnings
@@ -304,8 +322,6 @@ def main():
             wavelength_df = None
 
         logger.info("Trying to create CF-NetCDF file(s)")
-        # Convert the DataFrame to NetCDF files
-        # TODO: Need to write global attributes. Different per file
 
         # Define chunk size
         chunk_size_lines = 5000
@@ -344,9 +360,7 @@ def main():
 
             logger.info(f'File created: {output_filepath}')
 
-        # global_attributes.derive(pc_df)
-        # create_netcdf(pc_df, wavelength_df, variable_mapping.dict, args.output_filepath, global_attributes.dict, cf_crs, chunk_size)
-        # logger.info(f'File created: {args.output_filepath}')
+        logger.info('End of job')
 
 if __name__ == '__main__':
     main()

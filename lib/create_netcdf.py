@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import netCDF4 as nc
 import numpy as np
+import uuid
 import logging
 from lib.utils import scale_to_integers
 
@@ -120,6 +121,11 @@ class NetCDF:
                 #     self.ncfile.setncattr(attribute, value)
                 # else:
                 self.ncfile.setncattr(attribute, value)
+        
+        # Assigning an id if not already assigned
+        if 'id' not in global_attributes:
+            file_id = f'no.met.adc.{uuid.uuid4()}'
+            self.ncfile.setncattr('id',file_id)
 
     def close(self):
         # Close the file

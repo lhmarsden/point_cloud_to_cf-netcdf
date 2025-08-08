@@ -6,6 +6,7 @@
 # geospatial_lat_min, geospatial_lat_max, geospatial_lon_min, geospatial_lon_max, date_created, history
 # If you include values for these attributes, this will override the values written within the script.
 
+# TODO: Need to decide what to do with title and summary
 title:
   description: "A short phrase or sentence describing the dataset."
   requirement: "Required."
@@ -100,6 +101,12 @@ institution:
   format: "text"
   value: ""
 
+naming_authority:
+  description: "The organization that provides the initial id (see above) for the dataset. The naming authority should be uniquely specified by this attribute. We recommend using reverse-DNS naming for the naming authority; URIs are also acceptable. Example: 'edu.ucar.unidata'."
+  requirement: "Required if not hosted by MET."
+  format: "text"
+  value: "no.met.adc"
+
 publisher_name:
   description: "The name of the person (or other entity specified by the publisher_type attribute) responsible for publishing the data file or product to users, with its current metadata and format."
   requirement: "Required if not hosted by MET. If not an organisation, add publisher_institution, which identifies the data centre hosting the dataset."
@@ -172,65 +179,3 @@ featureType:
   requirement: "The keywords used have to be exactly written as in the CF conventions. Valid keywords are listed in the CF-Convention specification."
   format: "text"
   value: "point"
-
-# id:
-#   description: "An identifier for the dataset, provided by and unique within its naming authority."
-#   requirement: "Required if not hosted by MET. If hosted by MET, please do not add this."
-#   format: "text"
-#   value: ""
-
-# naming_authority:
-#   description: "The organization that provides the initial id. Example: 'edu.ucar.unidata'."
-#   requirement: "Required if not hosted by MET."
-#   format: "text"
-#   value: ""
-
-# dataset_doi:
-#   description: "The DOI for the dataset. When known up front to publishing the dataset, this is the place to put it to avoid confusion."
-#   requirement: ""
-#   format: "text"
-#   value: ""
-
-# geospatial_lat_min:
-#   description: "The southernmost latitude covered by the dataset, in decimal degrees north."
-#   requirement: "Required."
-#   min: -90.0
-#   max: 90.0
-#   format: "number"
-#   value:
-
-# geospatial_lat_max:
-#   description: "The northernmost latitude covered by the dataset, in decimal degrees north."
-#   requirement: "Required."
-#   min: -90.0
-#   max: 90.0
-#   format: "number"
-#   value:
-
-# geospatial_lon_min:
-#   description: "The westernmost longitude covered by the dataset, in decimal degrees east."
-#   requirement: "Required."
-#   min: -180.0
-#   max: 180.0
-#   format: "number"
-#   value:
-
-# geospatial_lon_max:
-#   description: "The easternmost longitude covered by the dataset, in decimal degrees east."
-#   requirement: "Required."
-#   min: -180.0
-#   max: 180.0
-#   format: "number"
-#   value:
-
-# date_created:
-#   description: "The date on which this version of the data was created (ISO 8601:2004 format)."
-#   requirement: "Required."
-#   format: "text"
-#   value: ""
-
-# history:
-#   description: "An audit trail for modifications to the original data."
-#   requirement: "Required."
-#   format: "text"
-#   value: ""

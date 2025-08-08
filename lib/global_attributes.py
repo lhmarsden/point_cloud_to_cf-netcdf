@@ -2,6 +2,7 @@ import json
 import os
 import yaml
 import toml
+import math
 import numpy as np
 from lib.utils import validate_time_format
 from datetime import datetime, timezone
@@ -42,7 +43,8 @@ required_attributes = [
     'publisher_url',
     'project',
     'license',
-    'featureType'
+    'featureType',
+    'naming_authority'
 ]
 
 # Attributes that should have float values
@@ -61,19 +63,29 @@ class GlobalAttributes:
     def __init__(self):
         self.data = None
 
-    def read_global_attributes(self, arg):
-        """Determine if the argument is a file path (YAML) or a JSON string and read global attributes accordingly."""
-        if os.path.isfile(arg):
+    def read_global_attributes(self, user_global_attributes_filepath, met_global_attributes_filepath):
+        """Determine if the filepath is a file path (YAML) or a JSON string and read global attributes accordingly."""
+        if os.path.isfile(user_global_attributes_filepath):
             # Extract the file extension
-            _, ext = os.path.splitext(arg)
+            _, ext = os.path.splitext(user_global_attributes_filepath)
 
             # Determine file type based on extension
             if ext in ['.yaml', '.yml']:
-                self.dict = self._read_from_yaml_file(arg)
+                user_global_attributes = self._read_from_yaml_file(user_global_attributes_filepath)
             elif ext == '.toml':
-                self.dict = self._read_from_toml_file(arg)
+                user_global_attributes = self._read_from_toml_file(user_global_attributes_filepath)
         else:
-            self.dict = self._read_from_json_string(arg)
+            user_global_attributes = self._read_from_json_string(user_global_attributes_filepath)
+        
+        met_global_attributes = self._read_from_yaml_file(met_global_attributes_filepath)
+        
+        self.dict = {**met_global_attributes, **user_global_attributes}
+
+        # Remove NaN or empty-string values
+        self.dict = {
+            k: v for k, v in self.dict.items()
+            if not (v == '' or (isinstance(v, float) and math.isnan(v)) or v is np.nan)
+        }
 
     def _read_from_yaml_file(self, filepath):
         """Read global attributes from a YAML file."""
@@ -186,32 +198,40 @@ class GlobalAttributes:
                     if validate_time_format(value) == False:
                         errors.append(f'{attribute} must be in the format YYYY-MM-DD or YYYY-MM-DDTHH:MM:SSZ')
 
-        #         if attribute in ['geospatial_lat_min', 'geospatial_lat_max']:
-        #             if -90 <= float(value) <= 90:
-        #                 pass
-        #             else:
-        #                 errors.append(f'{attribute} must be between -90 and 90 inclusive')
+                if attribute in ['geospatial_lat_min', 'geospatial_lat_max']:
+                    if -90 <= float(value) <= 90:
+                        pass
+                    else:
+                        errors.append(f'{attribute} must be between -90 and 90 inclusive')
 
-        #         if attribute in ['geospatial_lon_min', 'geospatial_lon_max']:
-        #             if -180 <= float(value) <= 180:
-        #                 pass
-        #             else:
-        #                 errors.append(f'{attribute} must be between -180 and 180 inclusive')
+                if attribute in ['geospatial_lon_min', 'geospatial_lon_max']:
+                    if -180 <= float(value) <= 180:
+                        pass
+                    else:
+                        errors.append(f'{attribute} must be between -180 and 180 inclusive')
 
-        # geospatial_lat_min = self.dict['geospatial_lat_min']
-        # geospatial_lat_max = self.dict['geospatial_lat_max']
-        # geospatial_lon_min = self.dict['geospatial_lon_min']
-        # geospatial_lon_max = self.dict['geospatial_lon_max']
         time_coverage_start = self.dict['time_coverage_start']
         time_coverage_end = self.dict['time_coverage_end']
-
-        # if geospatial_lat_min > geospatial_lat_max:
-        #     errors.append('geospatial_lat_max must be greater than or equal to geospatial_lat_min')
-
-        # if geospatial_lon_min > geospatial_lon_max:
-        #     errors.append('geospatial_lon_max must be greater than or equal to geospatial_lon_min')
-
         if time_coverage_start > time_coverage_end:
             errors.append('time_coverage_end must be greater than or equal to time_coverage_start')
 
+        lat_min_key = 'geospatial_lat_min'
+        lat_max_key = 'geospatial_lat_max'
+        lon_min_key = 'geospatial_lon_min'
+        lon_max_key = 'geospatial_lon_max'
+
+        # Only check latitudes if both keys exist
+        if lat_min_key in self.dict and lat_max_key in self.dict:
+            geospatial_lat_min = self.dict[lat_min_key]
+            geospatial_lat_max = self.dict[lat_max_key]
+            if geospatial_lat_min > geospatial_lat_max:
+                errors.append(f"{lat_max_key} must be greater than or equal to {lat_min_key}")
+
+        # Only check longitudes if both keys exist
+        if lon_min_key in self.dict and lon_max_key in self.dict:
+            geospatial_lon_min = self.dict[lon_min_key]
+            geospatial_lon_max = self.dict[lon_max_key]
+            if geospatial_lon_min > geospatial_lon_max:
+                errors.append(f"{lon_max_key} must be greater than or equal to {lon_min_key}")
+        
         return errors, warnings
