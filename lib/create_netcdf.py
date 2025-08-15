@@ -121,7 +121,7 @@ class NetCDF:
                 #     self.ncfile.setncattr(attribute, value)
                 # else:
                 self.ncfile.setncattr(attribute, value)
-        
+
         # Assigning an id if not already assigned
         if 'id' not in global_attributes:
             file_id = f'no.met.adc.{uuid.uuid4()}'
@@ -142,7 +142,6 @@ def create_netcdf(pc_df, wavelength_df, variable_mapping, output_filepath, globa
     variable_mapping: Python dictionary containing the variable names and attributes
     chunk_size: Chunk size to divide data into along the point dimension
     '''
-    # TODO: Need to reduce file size (32 Gb). Compression didn't help. Precision of values, scale_factor could be useful. Then store data in int32 or int16.
     netcdf = NetCDF(output_filepath)
     netcdf.write_coordinate_variables(pc_df,wavelength_df,variable_mapping)
     if cf_crs:

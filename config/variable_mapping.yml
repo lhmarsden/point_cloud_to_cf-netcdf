@@ -83,7 +83,7 @@ Z: # Name of variable to be used in NetCDF file
     grid_mapping: 'crs'
     coverage_content_type: 'physicalMeasurement'
 
-#TODO: Add missing standard_names when approved, also need to tweak valid_min and valid_max
+#TODO: Need to tweak valid_min and valid_max
 red: # Name of variable to be used in NetCDF file
   dtype: 'i4' #! Would be f4 if between 0 and 1 and maybe between 0 and 255 too
   possible_names: # Possible names of variable in PLY or LAS file
@@ -94,7 +94,7 @@ red: # Name of variable to be used in NetCDF file
     valid_min: 0
     valid_max: 65535
     long_name: 'red channel (normalised to 16-bit integer)'
-    standard_name: observed_normalised_red_wavelength_intensity_of_point
+    standard_name: red_component_of_toa_outgoing_shortwave_flux_expressed_as_rgb_color
     coverage_content_type: 'physicalMeasurement'
 
 green: # Name of variable to be used in NetCDF file
@@ -107,7 +107,7 @@ green: # Name of variable to be used in NetCDF file
     valid_min: 0
     valid_max: 65535
     long_name: 'green channel (normalised to 16-bit integer)'
-    standard_name: observed_normalised_green_wavelength_intensity_of_point
+    standard_name: green_component_of_toa_outgoing_shortwave_flux_expressed_as_rgb_color
     coverage_content_type: 'physicalMeasurement'
 
 blue: # Name of variable to be used in NetCDF file
@@ -120,7 +120,7 @@ blue: # Name of variable to be used in NetCDF file
     valid_min: 0
     valid_max: 65535
     long_name: 'blue channel (normalised to 16-bit integer)'
-    standard_name: observed_normalised_blue_wavelength_intensity_of_point
+    standard_name: blue_component_of_toa_outgoing_shortwave_flux_expressed_as_rgb_color
     coverage_content_type: 'physicalMeasurement'
 
 nx: # Name of variable to be used in NetCDF file
@@ -132,7 +132,7 @@ nx: # Name of variable to be used in NetCDF file
     units: '1'
     long_name: 'terrain normal vector, x channel'
     coverage_content_type: 'physicalMeasurement'
-    standard_name: x_component_of_surface_outward_normal_vector
+    standard_name: x_component_of_surface_outward_normal_unit_vector
 
 ny: # Name of variable to be used in NetCDF file
   dtype: 'f4'
@@ -143,7 +143,7 @@ ny: # Name of variable to be used in NetCDF file
     units: '1'
     long_name: 'terrain normal vector, y channel'
     coverage_content_type: 'physicalMeasurement'
-    standard_name: y_component_of_surface_outward_normal_vector
+    standard_name: y_component_of_surface_outward_normal_unit_vector
 
 nz: # Name of variable to be used in NetCDF file
   dtype: 'f4'
@@ -154,7 +154,7 @@ nz: # Name of variable to be used in NetCDF file
     units: '1'
     long_name: 'terrain normal vector, z channel'
     coverage_content_type: 'physicalMeasurement'
-    standard_name: z_component_of_surface_outward_normal_vector
+    standard_name: upward_component_of_surface_outward_normal_unit_vector
 
 vx: # Name of variable to be used in NetCDF file
   dtype: 'f4'
@@ -163,7 +163,7 @@ vx: # Name of variable to be used in NetCDF file
   attributes: # Variable attributes to be written to NetCDF file for the variable
     units: '1'
     long_name: 'sensor view vector, x channel'
-    standard_name: 'x_component_of_vector_away_from_instrument'
+    standard_name: 'x_component_of_unit_vector_away_from_instrument'
     coverage_content_type: 'physicalMeasurement'
 
 vy: # Name of variable to be used in NetCDF file
@@ -173,7 +173,7 @@ vy: # Name of variable to be used in NetCDF file
   attributes: # Variable attributes to be written to NetCDF file for the variable
     units: '1'
     long_name: 'sensor view vector, y channel'
-    standard_name: 'y_component_of_vector_away_from_instrument'
+    standard_name: 'y_component_of_unit_vector_away_from_instrument'
     coverage_content_type: 'physicalMeasurement'
 
 vz: # Name of variable to be used in NetCDF file
@@ -183,7 +183,7 @@ vz: # Name of variable to be used in NetCDF file
   attributes: # Variable attributes to be written to NetCDF file for the variable
     units: '1'
     long_name: 'sensor view vector, z channel'
-    standard_name: 'z_component_of_vector_away_from_instrument'
+    standard_name: 'upward_component_of_unit_vector_away_from_instrument'
     coverage_content_type: 'physicalMeasurement'
 
 px: # Name of variable to be used in NetCDF file
