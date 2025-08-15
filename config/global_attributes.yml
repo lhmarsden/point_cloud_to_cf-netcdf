@@ -11,7 +11,7 @@ title:
   description: "A short phrase or sentence describing the dataset."
   requirement: "Required."
   format: "text"
-  value: ""
+  value: "Some title"
 
 summary:
   description: "A paragraph describing the dataset."

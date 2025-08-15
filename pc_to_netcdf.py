@@ -356,12 +356,12 @@ def main():
                 base, ext = os.path.splitext(args.output_filepath)
                 lines = f'_lines_{start_py}_to_{end_py}'
                 output_filepath = f"{base}{lines}{ext}"
-                global_attributes['title'] = global_attributes['title'] + lines.replace('_',' ')
+                global_attributes_chunk.dict['title'] = global_attributes_chunk.dict['title'] + lines.replace('_',' ')
             else:
                 output_filepath = args.output_filepath
 
             # Create NetCDF
-            create_netcdf(pc_chunk, wavelength_chunk, variable_mapping.dict, output_filepath, global_attributes_chunk.dict, cf_crs, chunk_size, lines)
+            create_netcdf(pc_chunk, wavelength_chunk, variable_mapping.dict, output_filepath, global_attributes_chunk.dict, cf_crs, chunk_size)
 
             logger.info(f'File created: {output_filepath}')
 
