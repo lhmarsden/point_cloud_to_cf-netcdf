@@ -59,7 +59,7 @@ class NetCDF:
             wavelength_var.setncattr('coverage_content_type', 'coordinate')
             logger.info('Wrote a coordinate variable for each wavelength band')
 
-    def write_1d_data(self, pc_df, variable_mapping, chunk_size):
+    def write_1d_data(self, pc_df, variable_mapping):
 
         # Loop through columns in input data
         for col in pc_df.columns:
@@ -74,8 +74,7 @@ class NetCDF:
                             variable_mapping[variable]['dtype'],
                             ('point',),
                             zlib=True,
-                            complevel=1,
-                            chunksizes=(chunk_size,)
+                            complevel=1
                             )
                         # Writing data to variable
                         netcdf_variable[:] = pc_df[col]
@@ -84,9 +83,7 @@ class NetCDF:
                             netcdf_variable.setncattr(attribute, value)
                         logger.info(f'Data and metadata written to {variable} variable')
 
-    def write_2d_data(self, wavelength_df, variable_mapping, chunk_size):
-
-        num_points, num_bands = wavelength_df.shape
+    def write_2d_data(self, wavelength_df, variable_mapping):
 
         # Initialize the variable
         intensity = self.ncfile.createVariable(
@@ -94,8 +91,7 @@ class NetCDF:
             'i4',
             ('point','band'),
             zlib=True,
-            complevel=1,
-            chunksizes=(chunk_size,num_bands)
+            complevel=1
             )
 
         # Add values to the intensity variable
@@ -135,7 +131,7 @@ class NetCDF:
         self.ncfile.close()
 
 
-def create_netcdf(pc_df, wavelength_df, variable_mapping, output_filepath, global_attributes, cf_crs, chunk_size):
+def create_netcdf(pc_df, wavelength_df, variable_mapping, output_filepath, global_attributes, cf_crs):
     '''
     pc_df : pandas dataframe with columns including latitude, longitude, z
     wavelength_df: frequency bands and intensity values. None if not provided.
@@ -143,14 +139,13 @@ def create_netcdf(pc_df, wavelength_df, variable_mapping, output_filepath, globa
     output_filepath: where to write the netcdf file
     cf_crs: Python dictionary of the key value pairs for the variable attributes of the CRS variable.
     variable_mapping: Python dictionary containing the variable names and attributes
-    chunk_size: Chunk size to divide data into along the point dimension
     '''
     netcdf = NetCDF(output_filepath)
     netcdf.write_coordinate_variables(pc_df,wavelength_df,variable_mapping)
     if cf_crs:
         netcdf.define_grid_mapping(cf_crs)
-    netcdf.write_1d_data(pc_df, variable_mapping, chunk_size)
+    netcdf.write_1d_data(pc_df, variable_mapping)
     if wavelength_df is not None and not wavelength_df.empty:
-        netcdf.write_2d_data(wavelength_df, variable_mapping, chunk_size)
+        netcdf.write_2d_data(wavelength_df, variable_mapping)
     netcdf.assign_global_attributes(global_attributes)
     netcdf.close()

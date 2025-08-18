@@ -3,7 +3,6 @@ from lib.read_data import read_hyspex, ply_to_df, las_to_df, get_cf_crs, list_va
 from lib.create_netcdf import create_netcdf
 from lib.global_attributes import GlobalAttributes
 from lib.variable_mapping import VariableMapping
-from lib.utils import define_chunk_size
 import argparse
 import yaml
 import toml
@@ -276,8 +275,6 @@ def main():
         logger.error("Error: No input file provided")
         sys.exit(1)
 
-    chunk_size, chunk_errors = define_chunk_size(pc_df,args.hdr_filepath)
-
     if cf_crs is None:
         # Ensure the DataFrame has latitude and longitude columns
         logger.info("The CF CRS attributes could not be computed. Checking if the input data contains latitude and longitude columns")
@@ -296,7 +293,7 @@ def main():
     ga_errors, ga_warnings = global_attributes.check()
     #ga_errors, ga_warnings = [], [] # Use this line to bypass check of global attributes
 
-    errors = data_errors + ga_errors + reformatting_errors + vm_errors + crs_errors + chunk_errors
+    errors = data_errors + ga_errors + reformatting_errors + vm_errors + crs_errors
     warnings = data_warnings + ga_warnings + reformatting_warnings + vm_warnings + crs_warnings
 
     if len(warnings) > 0:
@@ -361,7 +358,7 @@ def main():
                 output_filepath = args.output_filepath
 
             # Create NetCDF
-            create_netcdf(pc_chunk, wavelength_chunk, variable_mapping.dict, output_filepath, global_attributes_chunk.dict, cf_crs, chunk_size)
+            create_netcdf(pc_chunk, wavelength_chunk, variable_mapping.dict, output_filepath, global_attributes_chunk.dict, cf_crs)
 
             logger.info(f'File created: {output_filepath}')
 
