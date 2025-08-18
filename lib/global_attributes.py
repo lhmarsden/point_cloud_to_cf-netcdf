@@ -78,14 +78,23 @@ class GlobalAttributes:
             user_global_attributes = self._read_from_json_string(user_global_attributes_filepath)
         
         met_global_attributes = self._read_from_yaml_file(met_global_attributes_filepath)
+
+        def clean_dict(d):
+            # Remove NaN or empty-string values
+            return {
+                k: v for k, v in d.items()
+                if not (
+                    v == '' 
+                    or (isinstance(v, float) and math.isnan(v)) 
+                    or v is np.nan
+                )
+            }
+        
+        met_global_attributes = clean_dict(met_global_attributes)
+        user_global_attributes = clean_dict(user_global_attributes)
         
         self.dict = {**met_global_attributes, **user_global_attributes}
-
-        # Remove NaN or empty-string values
-        self.dict = {
-            k: v for k, v in self.dict.items()
-            if not (v == '' or (isinstance(v, float) and math.isnan(v)) or v is np.nan)
-        }
+        
 
     def _read_from_yaml_file(self, filepath):
         """Read global attributes from a YAML file."""

@@ -6,7 +6,6 @@
 # geospatial_lat_min, geospatial_lat_max, geospatial_lon_min, geospatial_lon_max, date_created, history
 # If you include values for these attributes, this will override the values written within the script.
 
-# TODO: Need to decide what to do with title and summary
 title:
   description: "A short phrase or sentence describing the dataset."
   requirement: "Required."
