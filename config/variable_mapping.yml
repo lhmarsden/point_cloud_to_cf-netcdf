@@ -83,7 +83,6 @@ Z: # Name of variable to be used in NetCDF file
     grid_mapping: 'crs'
     coverage_content_type: 'physicalMeasurement'
 
-#TODO: Need to tweak valid_min and valid_max
 red: # Name of variable to be used in NetCDF file
   dtype: 'i4' #! Would be f4 if between 0 and 1 and maybe between 0 and 255 too
   possible_names: # Possible names of variable in PLY or LAS file
@@ -92,7 +91,7 @@ red: # Name of variable to be used in NetCDF file
   attributes: # Variable attributes to be written to NetCDF file for the variable
     units: '1'
     valid_min: 0
-    valid_max: 65535
+    valid_max: 255
     long_name: 'red channel (normalised to 16-bit integer)'
     standard_name: red_component_of_toa_outgoing_shortwave_flux_expressed_as_rgb_color
     coverage_content_type: 'physicalMeasurement'
@@ -105,7 +104,7 @@ green: # Name of variable to be used in NetCDF file
   attributes: # Variable attributes to be written to NetCDF file for the variable
     units: '1'
     valid_min: 0
-    valid_max: 65535
+    valid_max: 255
     long_name: 'green channel (normalised to 16-bit integer)'
     standard_name: green_component_of_toa_outgoing_shortwave_flux_expressed_as_rgb_color
     coverage_content_type: 'physicalMeasurement'
@@ -118,7 +117,7 @@ blue: # Name of variable to be used in NetCDF file
   attributes: # Variable attributes to be written to NetCDF file for the variable
     units: '1'
     valid_min: 0
-    valid_max: 65535
+    valid_max: 255
     long_name: 'blue channel (normalised to 16-bit integer)'
     standard_name: blue_component_of_toa_outgoing_shortwave_flux_expressed_as_rgb_color
     coverage_content_type: 'physicalMeasurement'

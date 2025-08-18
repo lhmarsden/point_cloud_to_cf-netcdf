@@ -97,9 +97,7 @@ class NetCDF:
         # Add values to the intensity variable
         wavelength_array = wavelength_df.to_numpy()
         scale_factor = 1e-6
-        print(wavelength_array)
-        print('type', type(wavelength_array))
-        # TODO: These values seem weird on the version read in from lustre
+
         intensity[:] = scale_to_integers(wavelength_array, scale_factor)
 
         # Assign intensity variable attributes
