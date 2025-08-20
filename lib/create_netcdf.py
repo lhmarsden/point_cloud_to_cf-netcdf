@@ -2,6 +2,7 @@
 import netCDF4 as nc
 import numpy as np
 import uuid
+import re
 import logging
 from lib.utils import scale_to_integers
 
@@ -111,24 +112,21 @@ class NetCDF:
     def assign_global_attributes(self,global_attributes):
         for attribute, value in global_attributes.items():
             if attribute not in self.ncfile.ncattrs() and value not in [np.nan, '', 'None', None, 'nan']:
-                # if format == 'string':
-                #     self.ncfile.setncattr_string(attribute, value)
-                # elif format == 'number':
-                #     value = float(value)
-                #     self.ncfile.setncattr(attribute, value)
-                # else:
+                # Removing short name in brackets
+                if attribute == 'creator_institution':
+                    value = re.sub(r"\s*\([^)]*\)", "", value)
                 self.ncfile.setncattr(attribute, value)
 
         # Assigning an id if not already assigned
         if 'id' not in global_attributes:
-            file_id = f'no.met.adc.{uuid.uuid4()}'
+            file_id = f'no.met.adc:{uuid.uuid4()}'
             self.ncfile.setncattr('id',file_id)
 
     def close(self):
         # Close the file
         self.ncfile.close()
 
-
+# TODO: Deal with output filepath better
 def create_netcdf(pc_df, wavelength_df, variable_mapping, output_filepath, global_attributes, cf_crs):
     '''
     pc_df : pandas dataframe with columns including latitude, longitude, z
