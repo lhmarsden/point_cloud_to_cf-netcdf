@@ -82,6 +82,7 @@ Z: # Name of variable to be used in NetCDF file
     standard_name: 'altitude'
     grid_mapping: 'crs'
     coverage_content_type: 'physicalMeasurement'
+    positive: 'up'
 
 red: # Name of variable to be used in NetCDF file
   dtype: 'i4' #! Would be f4 if between 0 and 1 and maybe between 0 and 255 too
@@ -90,8 +91,8 @@ red: # Name of variable to be used in NetCDF file
     - R
   attributes: # Variable attributes to be written to NetCDF file for the variable
     units: '1'
-    valid_min: 0
-    valid_max: 255
+    valid_min: 0.0
+    valid_max: 255.0
     long_name: 'red channel (normalised to 16-bit integer)'
     standard_name: red_component_of_toa_outgoing_shortwave_flux_expressed_as_rgb_color
     coverage_content_type: 'physicalMeasurement'
@@ -103,8 +104,8 @@ green: # Name of variable to be used in NetCDF file
     - G
   attributes: # Variable attributes to be written to NetCDF file for the variable
     units: '1'
-    valid_min: 0
-    valid_max: 255
+    valid_min: 0.0
+    valid_max: 255.0
     long_name: 'green channel (normalised to 16-bit integer)'
     standard_name: green_component_of_toa_outgoing_shortwave_flux_expressed_as_rgb_color
     coverage_content_type: 'physicalMeasurement'
@@ -116,8 +117,8 @@ blue: # Name of variable to be used in NetCDF file
     - B
   attributes: # Variable attributes to be written to NetCDF file for the variable
     units: '1'
-    valid_min: 0
-    valid_max: 255
+    valid_min: 0.0
+    valid_max: 255.0
     long_name: 'blue channel (normalised to 16-bit integer)'
     standard_name: blue_component_of_toa_outgoing_shortwave_flux_expressed_as_rgb_color
     coverage_content_type: 'physicalMeasurement'
