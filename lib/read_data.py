@@ -277,7 +277,7 @@ def read_hyspex(hdr_filepath, need_to_calibrate=False):
 
         logger.info('Combining calibrated hyspex data into a single dataframe')
         # Concatenate all dataframes into one
-        combined_df = pd.concat(dataframes, ignore_index=True)
+        combined_df = combine_dataframes(dataframes)
 
         return combined_df
     else:
