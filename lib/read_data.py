@@ -223,21 +223,19 @@ def ply_to_df(ply_filepath, cf_crs, variable_mapping, xcoord=None, ycoord=None, 
 
     return combined_df
 
-def read_hyspex(hdr_filepath, need_to_calibrate=False):
+def read_hyspex(hdr_filepath, start_line, end_line, need_to_calibrate=False):
 
     hdr = sp.envi.open(hdr_filepath)
     wavelengths = hdr.bands.centers
 
-    number_of_lines = None
+    number_of_lines = end_line - start_line
     number_of_samples = None
     interleave = None
 
     # Read the file and extract the required fields
     with open(hdr_filepath, 'r') as hdr_file:
         for line in hdr_file:
-            if re.match(r"^lines\s*=", line):
-                number_of_lines = int(line.split('=')[1].strip())
-            elif re.match(r"^samples\s*=", line):
+            if re.match(r"^samples\s*=", line):
                 number_of_samples = int(line.split('=')[1].strip())
             elif re.match(r"^interleave\s*=", line):
                 interleave = line.split('=')[1].strip()
@@ -253,7 +251,7 @@ def read_hyspex(hdr_filepath, need_to_calibrate=False):
             logger.info('Calibrating hyspex data line by line')
 
         # Process line by line
-        for line in range(number_of_lines):
+        for line in range(start_line, end_line + 1):
             if line % 1000 == 0:
                 logger.info(f'Processing line {line} of {number_of_lines}')
             # Create the line and sample indices for the current line
@@ -269,16 +267,18 @@ def read_hyspex(hdr_filepath, need_to_calibrate=False):
                 raw_line = hrad.img_bil[line_index, :, sample_index].T
                 raw_line_flattened = raw_line.reshape(-1, hdr.nbands)
                 df = pd.DataFrame(raw_line_flattened, columns=wavelengths)
+                #df.drop(columns=['py', 'px'], inplace=True)
 
-            df['py'] = line
-            df['px'] = df.index
+            #df['py'] = line
+            #df['px'] = df.index
 
             dataframes.append(df)
 
-        logger.info('Combining calibrated hyspex data into a single dataframe')
+        # logger.info('Combining calibrated hyspex data into a single dataframe')
         # Concatenate all dataframes into one
-        combined_df = combine_dataframes(dataframes)
+        # combined_df = combine_dataframes(dataframes)
 
-        return combined_df
+        # return combined_df
+        return dataframes
     else:
         return None

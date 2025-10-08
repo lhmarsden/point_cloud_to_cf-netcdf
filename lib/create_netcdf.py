@@ -26,13 +26,13 @@ class NetCDF:
         for attr, value in cf_crs.items():
             crs.setncattr(attr, value)
 
-    def write_coordinate_variables(self, pc_df, wavelength_df, variable_mapping):
+    def write_coordinate_variables(self, pc_df, wavelength_dfs):
 
-        if wavelength_df is not None and not wavelength_df.empty:
-            num_points, num_bands = wavelength_df.shape
-            wavelengths = wavelength_df.columns
+        num_points = len(pc_df)
+        if wavelength_dfs is not None:
+            wavelengths = wavelength_dfs[0].columns
+            num_bands = len(wavelengths)
         else:
-            num_points = len(pc_df)
             num_bands = None
             wavelengths = None
 
@@ -81,10 +81,19 @@ class NetCDF:
                         netcdf_variable[:] = pc_df[col]
                         # Writing variable attributes
                         for attribute, value in variable_mapping[variable]['attributes'].items():
-                            netcdf_variable.setncattr(attribute, value)
+                            if isinstance(value, int):
+                                cast_value = int(value)
+                            elif isinstance(value, float):
+                                cast_value = float(value)
+                            elif isinstance(value, str):
+                                cast_value = str(value)
+                            else:
+                                cast_value = value
+
+                            netcdf_variable.setncattr(attribute, cast_value)
                         logger.info(f'Data and metadata written to {variable} variable')
 
-    def write_2d_data(self, wavelength_df, variable_mapping):
+    def write_2d_data(self, wavelength_dfs, variable_mapping):
 
         # Initialize the variable
         intensity = self.ncfile.createVariable(
@@ -96,14 +105,27 @@ class NetCDF:
             )
 
         # Add values to the intensity variable
-        wavelength_array = wavelength_df.to_numpy()
+
         scale_factor = 1e-6
 
-        intensity[:] = scale_to_integers(wavelength_array, scale_factor)
+        for ii, wavelength_df in enumerate(wavelength_dfs):
+            print(wavelength_df)
+            wavelength_array = wavelength_df.to_numpy()
+            intensity[ii,:] = scale_to_integers(wavelength_array, scale_factor)
 
         # Assign intensity variable attributes
         for attribute, value in variable_mapping['intensity']['attributes'].items():
-            intensity.setncattr(attribute, value)
+
+            if isinstance(value, int):
+                cast_value = int(value)
+            elif isinstance(value, float):
+                cast_value = float(value)
+            elif isinstance(value, str):
+                cast_value = str(value)
+            else:
+                cast_value = value
+
+            intensity.setncattr(attribute, cast_value)
 
         intensity.setncattr('scale_factor', scale_factor)
 
@@ -126,22 +148,21 @@ class NetCDF:
         # Close the file
         self.ncfile.close()
 
-# TODO: Deal with output filepath better
-def create_netcdf(pc_df, wavelength_df, variable_mapping, output_filepath, global_attributes, cf_crs):
+def create_netcdf(pc_df, wavelength_dfs, variable_mapping, output_filepath, global_attributes, cf_crs):
     '''
     pc_df : pandas dataframe with columns including latitude, longitude, z
-    wavelength_df: frequency bands and intensity values. None if not provided.
+    wavelength_dfs: list of pandas dataframes including frequency bands and intensity values. None if not provided.
     global_attributes : python dictionary of global attributes
     output_filepath: where to write the netcdf file
     cf_crs: Python dictionary of the key value pairs for the variable attributes of the CRS variable.
     variable_mapping: Python dictionary containing the variable names and attributes
     '''
     netcdf = NetCDF(output_filepath)
-    netcdf.write_coordinate_variables(pc_df,wavelength_df,variable_mapping)
+    netcdf.write_coordinate_variables(pc_df,wavelength_dfs)
     if cf_crs:
         netcdf.define_grid_mapping(cf_crs)
     netcdf.write_1d_data(pc_df, variable_mapping)
-    if wavelength_df is not None and not wavelength_df.empty:
-        netcdf.write_2d_data(wavelength_df, variable_mapping)
+    if wavelength_dfs is not None:
+        netcdf.write_2d_data(wavelength_dfs, variable_mapping)
     netcdf.assign_global_attributes(global_attributes)
     netcdf.close()

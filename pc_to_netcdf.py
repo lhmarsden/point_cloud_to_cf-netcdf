@@ -112,24 +112,24 @@ def main():
         help='Does the hyspex data need to be calibrated? Enter y or n.'
     )
     parser.add_argument(
-        '-uga', 
-        '--user_global_attributes', 
-        type=str, 
-        required=True, 
+        '-uga',
+        '--user_global_attributes',
+        type=str,
+        required=True,
         help='Global attributes defined by user. Should be either 1) a JSON string with key/value pairs for global attributes, 2) a yaml file including this information 3) A toml file including this information'
         )
     parser.add_argument(
-        '-mga', 
-        '--met_global_attributes', 
-        type=str, 
-        help='Global attributes defined by MET, a yaml file', 
+        '-mga',
+        '--met_global_attributes',
+        type=str,
+        help='Global attributes defined by MET, a yaml file',
         default='config/global_attributes.yml'
         )
     parser.add_argument(
-        '-vm', 
-        '--variable_mapping', 
-        type=str, 
-        required=True, 
+        '-vm',
+        '--variable_mapping',
+        type=str,
+        required=True,
         help='Should be filepath to a yaml file including this information'
         )
 
@@ -307,58 +307,58 @@ def main():
         logger.error('No NetCDF file has been created. Please correct the errors and try again.\n\n')
     else:
         logger.info("Point cloud data and metadata read in a processed without error")
+
         if args.hdr_filepath:
-            if args.need_to_calibrate_hyspex == 'y':
-                calibrate = True
-            else:
-                calibrate = False
-            logger.info("Trying to load the data from the hyspex file and write them to a pandas dataframe")
-            wavelength_df = read_hyspex(args.hdr_filepath, need_to_calibrate=calibrate)
-            logger.info(f"Data from {args.hdr_filepath} loaded in successfully")
+
+            # Define chunk size
+            chunk_size_lines = 5000
+            penultimate_chunk_size = 3000
+            min_final_remainder = 1000
+
+            # Get min and max py values
+            min_py = pc_df['py'].min()
+            max_py = pc_df['py'].max()
+
+            py_ranges = generate_py_ranges(min_py, max_py, chunk_size_lines, penultimate_chunk_size, min_final_remainder)
+
+            logger.info(f"Creating {len(py_ranges)} NetCDF files with chunk size {chunk_size_lines} "
+                        f"and penultimate chunk size {penultimate_chunk_size} if needed, py range {min_py} to {max_py}.")
+
+            # Loop over calculated py ranges
+            for start_py, end_py in py_ranges:
+                # Filter dataframes for this py range
+                pc_chunk = pc_df[(pc_df['py'] >= start_py) & (pc_df['py'] <= end_py)]
+
+                if args.need_to_calibrate_hyspex == 'y':
+                    calibrate = True
+                else:
+                    calibrate = False
+                logger.info(f"Trying to load the data from the hyspex file lines {start_py} to {end_py} and write them to a pandas dataframe")
+                wavelength_dfs = read_hyspex(args.hdr_filepath, start_py, end_py, need_to_calibrate=calibrate)
+                logger.info(f"Data from {args.hdr_filepath} loaded in successfully")
+
+                # Derive attributes for this chunk
+                global_attributes_chunk = copy.deepcopy(global_attributes)
+                global_attributes_chunk.derive(pc_chunk)
+
+                # Update output filepath
+                if len(py_ranges) > 1:
+                    base, ext = os.path.splitext(args.output_filepath)
+                    lines = f'_lines_{start_py}_to_{end_py}'
+                    output_filepath = f"{base}{lines}{ext}"
+                    global_attributes_chunk.dict['title'] = global_attributes_chunk.dict['title'] + lines.replace('_',' ')
+                else:
+                    output_filepath = args.output_filepath
+
+                create_netcdf(pc_chunk, wavelength_dfs, variable_mapping.dict, output_filepath, global_attributes_chunk.dict, cf_crs)
+
+
         else:
-            wavelength_df = None
+            wavelength_dfs = None
+            output_filepath = args.output_filepath
 
-        logger.info("Trying to create CF-NetCDF file(s)")
-
-        # Define chunk size
-        chunk_size_lines = 5000
-        penultimate_chunk_size = 3000
-        min_final_remainder = 1000
-
-        # Get min and max py values
-        min_py = pc_df['py'].min()
-        max_py = pc_df['py'].max()
-
-        py_ranges = generate_py_ranges(min_py, max_py, chunk_size_lines, penultimate_chunk_size, min_final_remainder)
-
-        logger.info(f"Creating {len(py_ranges)} NetCDF files with chunk size {chunk_size_lines} "
-                    f"and penultimate chunk size {penultimate_chunk_size} if needed, py range {min_py} to {max_py}.")
-
-        # Loop over calculated py ranges
-        for start_py, end_py in py_ranges:
-            # Filter dataframes for this py range
-            pc_chunk = pc_df[(pc_df['py'] >= start_py) & (pc_df['py'] <= end_py)]
-            wavelength_chunk = wavelength_df[(wavelength_df['py'] >= start_py) & (wavelength_df['py'] <= end_py)]
-            wavelength_chunk = wavelength_chunk.copy()
-
-            # Deleting columns not required
-            wavelength_chunk.drop(columns=['py', 'px'], inplace=True)
-
-            # Derive attributes for this chunk
-            global_attributes_chunk = copy.deepcopy(global_attributes)
-            global_attributes_chunk.derive(pc_chunk)
-
-            # Update output filepath
-            if len(py_ranges) > 1:
-                base, ext = os.path.splitext(args.output_filepath)
-                lines = f'_lines_{start_py}_to_{end_py}'
-                output_filepath = f"{base}{lines}{ext}"
-                global_attributes_chunk.dict['title'] = global_attributes_chunk.dict['title'] + lines.replace('_',' ')
-            else:
-                output_filepath = args.output_filepath
-
-            # Create NetCDF
-            create_netcdf(pc_chunk, wavelength_chunk, variable_mapping.dict, output_filepath, global_attributes_chunk.dict, cf_crs)
+            logger.info("Trying to create CF-NetCDF file(s)")
+            create_netcdf(pc_df, wavelength_dfs, variable_mapping.dict, output_filepath, global_attributes.dict, cf_crs)
 
             logger.info(f'File created: {output_filepath}')
 
