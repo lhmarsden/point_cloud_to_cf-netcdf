@@ -239,10 +239,8 @@ def read_hyspex(hdr_filepath, start_line, end_line, need_to_calibrate=False):
                 number_of_samples = int(line.split('=')[1].strip())
             elif re.match(r"^interleave\s*=", line):
                 interleave = line.split('=')[1].strip()
-
     hyspex_file = os.path.splitext(hdr_filepath)[0] + ".hyspex"
     hrad = HyspexRad(hyspex_file)
-
     # Create an empty list to store dataframes
     dataframes = []
 
