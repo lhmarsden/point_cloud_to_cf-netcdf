@@ -287,8 +287,7 @@ def main():
     logger.info("Reading in global attributes")
     global_attributes = GlobalAttributes()
     global_attributes.read_global_attributes(args.user_global_attributes, args.met_global_attributes)
-    for key, val in global_attributes.dict.items():
-        print(key, val)
+
     reformatting_errors, reformatting_warnings = global_attributes.reformat_attributes()
     ga_errors, ga_warnings = global_attributes.check()
     #ga_errors, ga_warnings = [], [] # Use this line to bypass check of global attributes
@@ -333,7 +332,7 @@ def main():
                     calibrate = True
                 else:
                     calibrate = False
-                logger.info(f"Trying to load the data from the hyspex file lines {start_py} to {end_py} and write them to a pandas dataframe")
+                logger.info(f"Trying to load the data from the hyspex file lines {start_py} to {end_py}")
                 wavelength_dfs = read_hyspex(args.hdr_filepath, start_py, end_py, need_to_calibrate=calibrate)
                 logger.info(f"Data from {args.hdr_filepath} loaded in successfully")
 
