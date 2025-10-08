@@ -124,10 +124,9 @@ def import_hyspex(hyspex_file, mode="r", reshape2bip=False):
             hyim = np.memmap(
                 hyspex_file, dtype=dtype, mode=mode, offset=offset, shape=(Nl, Nb, Ns)
             )
-        except Exception:
-            import pdb
-
-            pdb.set_trace()
+        except Exception as e:
+            print(f"Error: {e}")
+            raise
         if reshape2bip:
             hyim = np.transpose(hyim, [0, 2, 1])
 
