@@ -108,10 +108,16 @@ class NetCDF:
 
         scale_factor = 1e-6
 
+        start_row = 0
         for ii, wavelength_df in enumerate(wavelength_dfs):
-            print(wavelength_df)
+            logger.info(f'Writing dataframe {ii} of {len(wavelength_dfs)} to intesity variable')
             wavelength_array = wavelength_df.to_numpy()
-            intensity[ii,:] = scale_to_integers(wavelength_array, scale_factor)
+            n_rows = wavelength_array.shape[0]
+
+            end_row = start_row + n_rows
+            intensity[start_row:end_row, :] = scale_to_integers(wavelength_array, scale_factor)
+
+            start_row = end_row  # move to next chunk
 
         # Assign intensity variable attributes
         for attribute, value in variable_mapping['intensity']['attributes'].items():
