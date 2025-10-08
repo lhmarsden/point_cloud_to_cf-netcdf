@@ -110,7 +110,7 @@ class NetCDF:
 
         start_row = 0
         for ii, wavelength_df in enumerate(wavelength_dfs):
-            logger.info(f'Writing dataframe {ii} of {len(wavelength_dfs)} to intesity variable')
+            logger.info(f'Writing dataframe {ii+1} of {len(wavelength_dfs)} to intesity variable')
             wavelength_array = wavelength_df.to_numpy()
             n_rows = wavelength_array.shape[0]
 
