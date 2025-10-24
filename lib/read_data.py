@@ -8,6 +8,7 @@ import gc
 import logging
 import os
 import re
+from typing import Generator, Tuple
 from lib.hyspex_calibration import HyspexRad
 
 
@@ -223,60 +224,91 @@ def ply_to_df(ply_filepath, cf_crs, variable_mapping, xcoord=None, ycoord=None, 
 
     return combined_df
 
-def read_hyspex(hdr_filepath, start_line, end_line, need_to_calibrate=False):
+def read_hyspex_stream(
+    hdr_filepath: str,
+    start_line: int,
+    end_line: int,
+    chunk_size: int = 1000,
+    need_to_calibrate: bool = False,
+    progress_interval: int = 1000,
+) -> Tuple[Generator[np.ndarray, None, None], np.ndarray]:
+    """
+    Stream hyspex data line ranges as NumPy chunks.
 
+    Returns:
+        (generator, wavelengths)
+        - generator yields np.ndarray of shape (n_pixels, nbands) dtype float32
+        - wavelengths is the 1D array of band centres (same length as nbands)
+
+    Notes:
+    - chunk_size: number of *lines* to accumulate before yielding. Each line contributes number_of_samples pixels.
+    - start_line and end_line are inclusive.
+    - interleave must be 'bil' (function will raise ValueError otherwise).
+    """
     hdr = sp.envi.open(hdr_filepath)
-    wavelengths = hdr.bands.centers
+    wavelengths = np.asarray(hdr.bands.centers)
+    nbands = int(hdr.nbands)
 
-    number_of_lines = end_line - start_line
+    # parse header for samples & interleave (robust to whitespace)
     number_of_samples = None
     interleave = None
-
-    # Read the file and extract the required fields
     with open(hdr_filepath, 'r') as hdr_file:
         for line in hdr_file:
-            if re.match(r"^samples\s*=", line):
+            if re.match(r"^\s*samples\s*=", line, flags=re.IGNORECASE):
                 number_of_samples = int(line.split('=')[1].strip())
-            elif re.match(r"^interleave\s*=", line):
-                interleave = line.split('=')[1].strip()
+            elif re.match(r"^\s*interleave\s*=", line, flags=re.IGNORECASE):
+                interleave = line.split('=')[1].strip().lower()
+
+    if number_of_samples is None or interleave is None:
+        raise ValueError(f"Couldn't read 'samples' or 'interleave' from {hdr_filepath}")
+
+    if interleave != 'bil':
+        raise ValueError(f"Unsupported interleave='{interleave}'. This reader expects 'bil'.")
+
     hyspex_file = os.path.splitext(hdr_filepath)[0] + ".hyspex"
     hrad = HyspexRad(hyspex_file)
-    # Create an empty list to store dataframes
-    dataframes = []
 
-    if interleave == 'bil':
-        if need_to_calibrate == True:
-            logger.info('Calibrating hyspex data line by line')
+    total_lines = end_line - start_line + 1
+    logger.info(f"Streaming lines {start_line}..{end_line} ({total_lines} lines), chunk_size={chunk_size}")
 
-        # Process line by line
+    def _generator():
+        buffer = []
+        lines_in_buffer = 0
+        processed_lines = 0
+
+        # iterate inclusive
         for line in range(start_line, end_line + 1):
-            if line % 1000 == 0:
-                logger.info(f'Processing line {line} of {number_of_lines}')
-            # Create the line and sample indices for the current line
+            processed_lines += 1
+            if (processed_lines % progress_interval) == 0:
+                logger.info(f"Read progress: processed {processed_lines} / {total_lines} lines")
+
+            # create indices for this single line
             line_index = [line] * number_of_samples
             sample_index = list(range(number_of_samples))
 
-            if need_to_calibrate == True:
-                # Calibrate the spectrum for the current line
+            if need_to_calibrate:
+                # calibrate_spectrum may return shape (n_samples, nbands) or (1, n_samples, nbands)
                 calibrated_line = hrad.calibrate_spectrum(line_index, sample_index)
-                calibrated_line_flattened = calibrated_line.reshape(-1, hdr.nbands)
-                df = pd.DataFrame(calibrated_line_flattened, columns=wavelengths)
+                line_arr = np.asarray(calibrated_line).reshape(-1, nbands)
             else:
+                # raw BIL access (match your original indexing)
                 raw_line = hrad.img_bil[line_index, :, sample_index].T
-                raw_line_flattened = raw_line.reshape(-1, hdr.nbands)
-                df = pd.DataFrame(raw_line_flattened, columns=wavelengths)
-                #df.drop(columns=['py', 'px'], inplace=True)
+                line_arr = np.asarray(raw_line).reshape(-1, nbands)
 
-            #df['py'] = line
-            #df['px'] = df.index
+            # ensure float32 (smaller memory footprint) — adjust if you need higher precision
+            buffer.append(line_arr.astype(np.float32, copy=False))
+            lines_in_buffer += 1
 
-            dataframes.append(df)
+            if lines_in_buffer >= chunk_size:
+                # stack and yield
+                stacked = np.vstack(buffer)  # shape (chunk_lines * samples, nbands)
+                yield stacked
+                buffer.clear()
+                lines_in_buffer = 0
 
-        # logger.info('Combining calibrated hyspex data into a single dataframe')
-        # Concatenate all dataframes into one
-        # combined_df = combine_dataframes(dataframes)
+        # yield any remainder
+        if buffer:
+            stacked = np.vstack(buffer)
+            yield stacked
 
-        # return combined_df
-        return dataframes
-    else:
-        return None
+    return _generator(), wavelengths

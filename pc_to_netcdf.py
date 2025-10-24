@@ -1,5 +1,5 @@
 import os
-from lib.read_data import read_hyspex, ply_to_df, las_to_df, get_cf_crs, list_variables_in_ply
+from lib.read_data import read_hyspex_stream, ply_to_df, las_to_df, get_cf_crs, list_variables_in_ply
 from lib.create_netcdf import create_netcdf
 from lib.global_attributes import GlobalAttributes
 from lib.variable_mapping import VariableMapping
@@ -320,8 +320,10 @@ def main():
 
             py_ranges = generate_py_ranges(min_py, max_py, chunk_size_lines, penultimate_chunk_size, min_final_remainder)
 
-            logger.info(f"Creating {len(py_ranges)} NetCDF files with chunk size {chunk_size_lines} "
-                        f"and penultimate chunk size {penultimate_chunk_size} if needed, py range {min_py} to {max_py}.")
+            logger.info(
+                f"Creating {len(py_ranges)} NetCDF files with chunk size {chunk_size_lines} "
+                f"and penultimate chunk size {penultimate_chunk_size} if needed, py range {min_py} to {max_py}."
+            )
 
             # Loop over calculated py ranges
             for start_py, end_py in py_ranges:
@@ -332,9 +334,21 @@ def main():
                     calibrate = True
                 else:
                     calibrate = False
-                logger.info(f"Trying to load the data from the hyspex file lines {start_py} to {end_py}")
-                wavelength_dfs = read_hyspex(args.hdr_filepath, start_py, end_py, need_to_calibrate=calibrate)
-                logger.info(f"Data from {args.hdr_filepath} loaded in successfully")
+
+
+                logger.info(f"Preparing to stream hyspex lines {start_py} to {end_py} (calibrate={calibrate})")
+
+                # Use the streaming reader — returns (generator, wavelengths)
+                chunks_gen, wavelengths = read_hyspex_stream(
+                    args.hdr_filepath,
+                    start_py,
+                    end_py,
+                    chunk_size=chunk_size_lines,
+                    need_to_calibrate=calibrate,
+                    progress_interval=1000
+                )
+
+                logger.info(f"Hyspex data stream ready for lines {start_py}..{end_py}")
 
                 # Derive attributes for this chunk
                 global_attributes_chunk = copy.deepcopy(global_attributes)
@@ -349,8 +363,7 @@ def main():
                 else:
                     output_filepath = args.output_filepath
 
-                create_netcdf(pc_chunk, wavelength_dfs, variable_mapping.dict, output_filepath, global_attributes_chunk.dict, cf_crs)
-
+                create_netcdf(pc_chunk, chunks_gen, variable_mapping.dict, output_filepath, global_attributes_chunk.dict, cf_crs, wavelengths)
 
         else:
             wavelength_dfs = None

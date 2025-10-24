@@ -26,39 +26,41 @@ class NetCDF:
         for attr, value in cf_crs.items():
             crs.setncattr(attr, value)
 
-    def write_coordinate_variables(self, pc_df, wavelength_dfs):
+    def write_coordinate_variables(self, pc_df, wavelengths=None):
+        """
+        Write coordinate variables for point and optionally band dimensions.
+        """
 
         num_points = len(pc_df)
-        if wavelength_dfs is not None:
-            wavelengths = wavelength_dfs[0].columns
-            num_bands = len(wavelengths)
-        else:
-            num_bands = None
-            wavelengths = None
 
-        # Define a dimension as an arbitrary counter for the points
+        # Define the 'point' dimension and variable
         self.ncfile.createDimension('point', size=num_points)
-        # Write coordinate variable
         point_var = self.ncfile.createVariable('point', 'f4', ('point',), zlib=True, complevel=1)
-        point_var[:] = range(num_points)
-        # Adding variable attributes
+        point_var[:] = np.arange(num_points, dtype=np.float32)
         point_var.setncattr('units', '1')
         point_var.setncattr('long_name', 'Arbitrary counter for number of points in the point cloud')
         point_var.setncattr('standard_name', 'number_of_observations')
         point_var.setncattr('coverage_content_type', 'coordinate')
-        logger.info('Wrote a coordinate variable for each point')
+        logger.info('Wrote coordinate variable for each point')
 
-        if num_bands:
-            # Define a dimension and coordinate variable for the wavelength bands
+        # Define the 'band' dimension if wavelengths are given
+        if wavelengths is not None:
+            wavelengths = np.asarray(wavelengths, dtype=np.float32)
+            num_bands = len(wavelengths)
+
+            if num_bands == 0:
+                logger.warning("Wavelengths array provided but empty — 'band' dimension not created.")
+                return
+
             self.ncfile.createDimension('band', size=num_bands)
-            wavelength_var = self.ncfile.createVariable('band', 'f4', ('band',), zlib=True, complevel=1)
-            wavelength_var[:] = wavelengths
+            band_var = self.ncfile.createVariable('band', 'f4', ('band',), zlib=True, complevel=1)
+            band_var[:] = wavelengths
 
-            wavelength_var.setncattr('units', 'nanometers')
-            wavelength_var.setncattr('long_name', 'Spectral band')
-            wavelength_var.setncattr('standard_name', 'radiation_wavelength')
-            wavelength_var.setncattr('coverage_content_type', 'coordinate')
-            logger.info('Wrote a coordinate variable for each wavelength band')
+            band_var.setncattr('units', 'nanometers')
+            band_var.setncattr('long_name', 'Spectral band')
+            band_var.setncattr('standard_name', 'radiation_wavelength')
+            band_var.setncattr('coverage_content_type', 'coordinate')
+            logger.info(f'Wrote coordinate variable for each wavelength band ({num_bands} total)')
 
     def write_1d_data(self, pc_df, variable_mapping):
 
@@ -93,44 +95,56 @@ class NetCDF:
                             netcdf_variable.setncattr(attribute, cast_value)
                         logger.info(f'Data and metadata written to {variable} variable')
 
-    def write_2d_data(self, wavelength_dfs, variable_mapping):
+    def write_2d_data(self, wavelength_source, variable_mapping, wavelengths=None):
+        """
+        Write 2D spectral intensity data (point x band) to NetCDF.
 
-        # Initialize the variable
+        wavelength_source : generator yielding NumPy arrays
+                            OR list of Pandas DataFrames (legacy).
+        variable_mapping : dict describing variable attributes.
+        wavelengths : optional array of wavelength centres for metadata.
+        """
+        # Create the intensity variable
         intensity = self.ncfile.createVariable(
             'intensity',
             'i4',
-            ('point','band'),
+            ('point', 'band'),
             zlib=True,
             complevel=1
-            )
-
-        # Add values to the intensity variable
+        )
 
         scale_factor = 1e-6
-
         start_row = 0
-        for ii, wavelength_df in enumerate(wavelength_dfs):
-            logger.info(f'Writing dataframe {ii+1} of {len(wavelength_dfs)} to intesity variable')
-            wavelength_array = wavelength_df.to_numpy()
-            n_rows = wavelength_array.shape[0]
 
-            end_row = start_row + n_rows
-            intensity[start_row:end_row, :] = scale_to_integers(wavelength_array, scale_factor)
+        # Decide whether this is a generator or list
+        if hasattr(wavelength_source, '__iter__') and not isinstance(wavelength_source, (list, tuple)):
+            # --- Streaming mode ---
+            logger.info("Writing intensity data in streaming mode.")
+            for i, chunk in enumerate(wavelength_source, start=1):
+                if not isinstance(chunk, np.ndarray):
+                    raise TypeError("Expected NumPy array from streaming reader.")
+                n_rows = chunk.shape[0]
+                logger.info(f"Writing chunk {i} ({n_rows} rows) to intensity variable.")
+                intensity[start_row:start_row + n_rows, :] = scale_to_integers(chunk, scale_factor)
+                start_row += n_rows
+        else:
+            # --- Legacy mode (list of DataFrames) ---
+            logger.info("Writing intensity data from DataFrame list.")
+            for ii, df in enumerate(wavelength_source):
+                logger.info(f"Writing dataframe {ii + 1} of {len(wavelength_source)}")
+                arr = df.to_numpy()
+                n_rows = arr.shape[0]
+                end_row = start_row + n_rows
+                intensity[start_row:end_row, :] = scale_to_integers(arr, scale_factor)
+                start_row = end_row
 
-            start_row = end_row  # move to next chunk
-
-        # Assign intensity variable attributes
-        for attribute, value in variable_mapping['intensity']['attributes'].items():
-
-            if isinstance(value, int):
-                cast_value = int(value)
-            elif isinstance(value, float):
-                cast_value = float(value)
-            elif isinstance(value, str):
-                cast_value = str(value)
-            else:
+        # Assign attributes
+        attrs = variable_mapping['intensity']['attributes']
+        for attribute, value in attrs.items():
+            if isinstance(value, (int, float, str)):
                 cast_value = value
-
+            else:
+                cast_value = str(value)
             intensity.setncattr(attribute, cast_value)
 
         intensity.setncattr('scale_factor', scale_factor)
@@ -154,21 +168,32 @@ class NetCDF:
         # Close the file
         self.ncfile.close()
 
-def create_netcdf(pc_df, wavelength_dfs, variable_mapping, output_filepath, global_attributes, cf_crs):
-    '''
-    pc_df : pandas dataframe with columns including latitude, longitude, z
-    wavelength_dfs: list of pandas dataframes including frequency bands and intensity values. None if not provided.
-    global_attributes : python dictionary of global attributes
-    output_filepath: where to write the netcdf file
-    cf_crs: Python dictionary of the key value pairs for the variable attributes of the CRS variable.
-    variable_mapping: Python dictionary containing the variable names and attributes
-    '''
+
+def create_netcdf(pc_df, wavelength_source, variable_mapping, output_filepath,
+                global_attributes, cf_crs, wavelengths=None):
+    """
+    Create a CF-compliant NetCDF file.
+
+    pc_df : pandas dataframe with coordinate information.
+    wavelength_source : generator OR list of data (NumPy arrays or DataFrames).
+    variable_mapping : dict of variable names and attributes.
+    output_filepath : output file path.
+    global_attributes : dict of global attributes.
+    cf_crs : dict of CRS variable attributes.
+    wavelengths : optional 1D array of wavelength centres (for band coordinate).
+    """
     netcdf = NetCDF(output_filepath)
-    netcdf.write_coordinate_variables(pc_df,wavelength_dfs)
+
+    # Write coordinates first
+    netcdf.write_coordinate_variables(pc_df, wavelengths=wavelengths)
+
     if cf_crs:
         netcdf.define_grid_mapping(cf_crs)
+
     netcdf.write_1d_data(pc_df, variable_mapping)
-    if wavelength_dfs is not None:
-        netcdf.write_2d_data(wavelength_dfs, variable_mapping)
+
+    if wavelength_source is not None:
+        netcdf.write_2d_data(wavelength_source, variable_mapping, wavelengths=wavelengths)
+
     netcdf.assign_global_attributes(global_attributes)
     netcdf.close()
