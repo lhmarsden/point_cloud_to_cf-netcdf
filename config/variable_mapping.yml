@@ -5,7 +5,7 @@
 #! If the variable name in the PLY/LAS file is not listed as a possible_name, the variable won't be written to the NetCDF file
 
 longitude: # Name of variable to be used in NetCDF file
-  dtype: 'f4'
+  dtype: 'f8'
   possible_names: # Possible names of variable in PLY or LAS file
     - longitude
     - lon
@@ -20,7 +20,7 @@ longitude: # Name of variable to be used in NetCDF file
     coverage_content_type: 'physicalMeasurement'
 
 latitude: # Name of variable to be used in NetCDF file
-  dtype: 'f4'
+  dtype: 'f8'
   possible_names: # Possible names of variable in PLY or LAS file
     - latitude
     - lat
@@ -51,7 +51,7 @@ altitude: # Name of variable to be used in NetCDF file
     coverage_content_type: 'physicalMeasurement'
 
 X: # Name of variable to be used in NetCDF file
-  dtype: 'f4'
+  dtype: 'f8'
   possible_names: # Possible names of variable in PLY or LAS file
     - X
   attributes: # Variable attributes to be written to NetCDF file for the variable
@@ -62,7 +62,7 @@ X: # Name of variable to be used in NetCDF file
     coverage_content_type: 'physicalMeasurement'
 
 Y: # Name of variable to be used in NetCDF file
-  dtype: 'f4'
+  dtype: 'f8'
   possible_names: # Possible names of variable in PLY or LAS file
     - Y
   attributes: # Variable attributes to be written to NetCDF file for the variable
