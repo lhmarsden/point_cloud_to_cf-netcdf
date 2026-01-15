@@ -96,3 +96,64 @@ python3 convert_multiple_files.py /path/to/file.csv
   - **Description:** Path to the input CSV file. Each row in this CSV represents a unique set of arguments passed to the `pc_to_netcdf.py` script.
   - **Example:** `input.csv`
 
+
+
+## Convert CF-NetCDF back to Point Cloud
+
+Script: `netcdf_to_pc.py`
+
+This script allows you to convert a CF-NetCDF file back into standard point cloud formats (PLY, LAS, or LAZ). It is designed to handle very large datasets efficiently by processing data in "chunks" to minimize RAM usage.
+
+### Example usage:
+
+**Basic conversion to PLY:**
+```bash
+python3 netcdf_to_pc.py /path/to/input.nc
+```
+
+**Convert to compressed LAZ with memory optimization:**
+```bash
+python3 netcdf_to_pc.py /path/to/input.nc --format laz --chunk-size 1000000
+```
+
+### Arguments:
+
+- `input` (str, required)
+  - **Description:** Path to the input NetCDF file.
+
+- `--format` (str, optional)
+  - **Description:** The output file format.
+  - **Choices:** `ply`, `las`, `laz`
+  - **Default:** `ply`
+
+- `--output` (str, optional)
+  - **Description:** Path to the output file. If omitted, the script saves the file in the same directory as the input with the new extension.
+  - **Example:** `--output /tmp/my_cloud.laz`
+
+- `--config` (str, optional)
+  - **Description:** Path to the YAML configuration file defining variable mappings and LAS settings.
+  - **Default:** `config/to_pc_config.yaml`
+
+- `--chunk-size` (int, optional)
+  - **Description:** Overrides the number of points processed per iteration. Lower this value if you are running out of RAM on large files.
+  - **Default:** Pulled from config file (usually `5000000`).
+
+### Configuration
+
+The script relies on `config/to_pc_config.yaml` to map NetCDF variables (e.g., `gps_time`) back to specific Point Cloud dimensions (e.g., `epoch`). It also handles format-specific settings, such as LAS version and scale factors.
+
+**Example Config:**
+```yaml
+las:
+  version: "1.4"
+  point_format: 7
+  scales: [0.001, 0.001, 0.001] # mm precision
+
+mappings:
+  # NetCDF Variable : Output Dimension
+  X: x
+  Y: y
+  Z: z
+  red: red
+  gps_time: epoch
+```
