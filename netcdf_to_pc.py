@@ -7,8 +7,8 @@ import argparse
 import yaml
 from plyfile import PlyData, PlyElement
 import laspy
+import copy
 
-# --- 1. SETUP & CONFIG LOAD ---
 def load_config(config_path):
     """Loads variables and settings from a YAML file."""
     if not os.path.exists(config_path):
@@ -16,220 +16,203 @@ def load_config(config_path):
         sys.exit(1)
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
-    
     if config is None:
         print(f"Error: Config file '{config_path}' appears to be empty.")
         sys.exit(1)
-        
     return config
 
 def parse_args():
     """Handles command line arguments."""
-    parser = argparse.ArgumentParser(description="Convert CF-NetCDF to PLY or LAS point clouds.")
+    parser = argparse.ArgumentParser(description="Convert CF-NetCDF to PLY or LAS point clouds (Chunked).")
     
-    parser.add_argument("input", help="Path to input NetCDF file or OPeNDAP URL")
+    parser.add_argument("input", help="Path to input NetCDF file")
     parser.add_argument("--format", choices=['ply', 'las', 'laz'], default='ply', help="Output format (default: ply)")
     parser.add_argument("--output", help="Path to output file. If omitted, defaults to input filename with new extension.")
-    parser.add_argument("--config", default="config.yaml", help="Path to YAML configuration file.")
+    
+    parser.add_argument("--config", default="config/to_pc_config.yaml", help="Path to YAML configuration file.")
+    
+    # CLI Override for chunk size
+    parser.add_argument("--chunk-size", type=int, help="Override config chunk size (number of points per iteration)")
     
     return parser.parse_args()
 
-# --- 2. DATA EXTRACTION ---
-def extract_data_from_nc(nc_path, config):
+def get_metadata_safely(ds, config):
     """
-    Opens NetCDF and extracts variables based on config mappings.
-    Returns a dictionary of numpy arrays and a metadata dictionary.
+    Extracts CRS and Bounding Box without loading the entire dataset into RAM.
+    Uses xarray's lazy loading capabilities.
     """
-    print(f"Opening {nc_path}...")
-    try:
-        ds = xr.open_dataset(nc_path, chunks=None) 
-    except Exception as e:
-        print(f"Failed to open NetCDF: {e}")
-        sys.exit(1)
-
-    count = ds.sizes['point']
-    print(f"Detected {count} points.")
-    
-    data = {}
-    
-    # Iterate through mappings
-    for nc_var, out_var in config['mappings'].items():
-        if nc_var in ds:
-            print(f"  -> Mapping {nc_var} to {out_var}")
-            values = ds[nc_var].values
-            
-            # --- FIX: DATA INTEGRITY ---
-            
-            # 1. Time: Convert datetime64 to float seconds (Unix Epoch)
-            if out_var == 'epoch':
-                if np.issubdtype(values.dtype, np.datetime64):
-                    values = values.astype('datetime64[us]').astype('float64') / 1e6
-            
-            # 2. Coordinates: Ensure Double Precision
-            elif out_var in ['x', 'y', 'z']:
-                values = values.astype('float64')
-
-            data[out_var] = values
-
-    # Gather Metadata for Headers
     crs_string = "unknown_crs"
     if 'datum' in ds.attrs:
         crs_string = ds.attrs['datum']
     elif 'crs' in ds and 'crs_wkt' in ds['crs'].attrs:
         crs_string = "See_WKT_in_NetCDF"
 
-    # Calculate bbox safely
-    bbox = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    if 'x' in data and 'y' in data and 'z' in data:
-        bbox = [
-            float(data['x'].min()), float(data['x'].max()),
-            float(data['y'].min()), float(data['y'].max()),
-            float(data['z'].min()), float(data['z'].max())
-        ]
-
-    metadata = {
+    print("Calculating Bounding Box (Lazy)...")
+    
+    # Map config names to netcdf names to find spatial extents
+    nc_map = {v: k for k, v in config['mappings'].items()} # Reverse map for lookup
+    
+    bbox = [0.0] * 6
+    # Check for X
+    if 'x' in nc_map and nc_map['x'] in ds:
+        bbox[0] = float(ds[nc_map['x']].min())
+        bbox[1] = float(ds[nc_map['x']].max())
+    # Check for Y
+    if 'y' in nc_map and nc_map['y'] in ds:
+        bbox[2] = float(ds[nc_map['y']].min())
+        bbox[3] = float(ds[nc_map['y']].max())
+    # Check for Z
+    if 'z' in nc_map and nc_map['z'] in ds:
+        bbox[4] = float(ds[nc_map['z']].min())
+        bbox[5] = float(ds[nc_map['z']].max())
+        
+    return {
         'crs': crs_string,
-        'source': os.path.basename(nc_path),
+        'source': "NetCDF",
         'processing_time': time.time(),
         'bbox': bbox
     }
-    
-    # Clean up Xarray object
-    ds.close()
-    
-    return data, metadata, count
 
-# --- 3. WRITERS ---
-def write_ply(data, metadata, output_path, count):
-    """Writes data to a Binary PLY file."""
-    print(f"Writing PLY to {output_path}...")
+def get_chunk(ds, config, start, end):
+    """
+    Reads a specific slice [start:end] of the NetCDF variables into memory.
+    This is the only time significant RAM is consumed.
+    """
+    data = {}
     
-    dtype_list = []
-    
-    # Priority order for visualization
-    priority_order = ['x', 'y', 'z', 'nx', 'ny', 'nz', 'red', 'green', 'blue']
-    sorted_keys = sorted(data.keys(), key=lambda k: priority_order.index(k) if k in priority_order else 99)
+    for nc_var, out_var in config['mappings'].items():
+        if nc_var in ds:
+            # Slice the data: this triggers the actual read from disk
+            values = ds[nc_var][start:end].values
+            
+            # 1. Time Conversion (datetime64 -> float seconds)
+            if out_var == 'epoch':
+                if np.issubdtype(values.dtype, np.datetime64):
+                    values = values.astype('datetime64[us]').astype('float64') / 1e6
+            
+            # 2. Coordinate Precision (Force doubles for coordinates)
+            elif out_var in ['x', 'y', 'z']:
+                values = values.astype('float64')
 
-    # Determine dtypes
-    for key in sorted_keys:
-        if key in ['red', 'green', 'blue']:
-            dtype_list.append((key, 'uint8'))
-        else:
-            dtype_list.append((key, data[key].dtype))
+            data[out_var] = values
+            
+    return data
 
-    # Create structured array
-    ply_struct = np.zeros(count, dtype=dtype_list)
-    
-    for key in sorted_keys:
-        val = data[key]
-        
-        # Scale colors down for PLY (16-bit -> 8-bit)
-        if key in ['red', 'green', 'blue']:
-            if val.max() > 255:
-                ply_struct[key] = (val / 65535.0 * 255).astype('uint8')
-            else:
-                ply_struct[key] = val.astype('uint8')
-        else:
-            ply_struct[key] = val
-        
-        del data[key]
-
-    comment_str = (
-        f"processing_time_epoch={metadata['processing_time']:.6f}; "
-        f"crs_info={metadata['crs']}; "
-        f"source_file={metadata['source']}; "
-    )
-
-    el = PlyElement.describe(ply_struct, 'vertex')
-    PlyData([el], text=False, comments=[comment_str]).write(output_path)
-    
-    print("PLY Write Complete.")
-
-def write_las(data, metadata, output_path, config, count):
-    """Writes data to LAS/LAZ using config settings."""
-    print(f"Writing LAS/LAZ to {output_path}...")
-    
+def process_and_write_las_chunked(ds, config, output_path, total_points, chunk_size):
+    """
+    Opens LAS file for writing, loops through NetCDF in chunks, 
+    processes data, writes to disk, and clears RAM.
+    """
+    metadata = get_metadata_safely(ds, config)
     las_conf = config['las']
     
-    # Setup Header
+    # 1. Setup Base Header (Template)
     header = laspy.LasHeader(point_format=las_conf['point_format'], version=las_conf['version'])
-    
     header.scales = np.array(las_conf['scales'])
     header.offsets = np.array([metadata['bbox'][0], metadata['bbox'][2], metadata['bbox'][4]])
-
+    
+    # LAS 1.4 Global Encoding for WKT/Time
     if las_conf['version'] == "1.4":
         header.global_encoding.gps_time_type = laspy.header.GpsTimeType.STANDARD
 
-    # Register Extra Bytes
-    # Note: 'scan_angle' is standard, so we exclude it from extra bytes
+    # 2. Define Extra Bytes
+    # We define attributes that are NOT standard LAS fields here
     standard_fields = ['x', 'y', 'z', 'intensity', 'red', 'green', 'blue', 'epoch', 'scan_angle']
-    
     extra_bytes = []
-    for key, arr in data.items():
-        if key not in standard_fields:
-            extra_bytes.append(laspy.ExtraBytesParams(name=key, type=arr.dtype))
     
+    for nc_var, out_var in config['mappings'].items():
+        if nc_var in ds and out_var not in standard_fields:
+            dtype = ds[nc_var].dtype
+            extra_bytes.append(laspy.ExtraBytesParams(name=out_var, type=dtype))
+
     if extra_bytes:
         header.add_extra_dims(extra_bytes)
 
-    # Create Data Object
-    las = laspy.LasData(header)
+    # 3. Create Writer Header
+    # The writer needs the TOTAL point count to write a valid file header
+    writer_header = copy.copy(header)
+    writer_header.point_count = total_points
+
+    print(f"Starting Chunked Write to {output_path} (Chunk Size: {chunk_size})...")
     
-    las.x = data['x']
-    las.y = data['y']
-    las.z = data['z']
-    
-    del data['x'], data['y'], data['z']
-    
-    # Scale colors up for LAS (8-bit -> 16-bit if needed)
-    if 'red' in data:
-        if data['red'].max() <= 255:
-            print("  -> Upscaling 8-bit color to 16-bit for LAS...")
-            las.red = data['red'].astype('uint16') * 256
-            las.green = data['green'].astype('uint16') * 256
-            las.blue = data['blue'].astype('uint16') * 256
-        else:
-            las.red = data['red'].astype('uint16')
-            las.green = data['green'].astype('uint16')
-            las.blue = data['blue'].astype('uint16')
+    # Open LAS file in write mode
+    with laspy.open(output_path, mode="w", header=writer_header) as writer:
         
-        del data['red'], data['green'], data['blue']
-
-    if 'epoch' in data:
-        las.gps_time = data['epoch'].astype('float64')
-        del data['epoch']
-
-    if 'intensity' in data:
-        las.intensity = data['intensity'].astype('uint16')
-        del data['intensity']
-
-    # --- FIX: Handle Scan Angle for LAS 1.4 (Format 6+) vs Legacy ---
-    if 'scan_angle' in data:
-        # Formats 6+ (like Format 7) use a high-precision 'scan_angle'
-        if header.point_format.id >= 6:
-            # New Format: 16-bit, step size 0.006 degrees
-            # We must divide input degrees by 0.006 to get the integer storage value
-            # e.g. 90 degrees / 0.006 = 15,000
-            las.scan_angle = (data['scan_angle'] / 0.006).astype('int16')
-        else:
-            # Old Format (0-5): 8-bit 'rank', integer degrees
-            las.scan_angle_rank = data['scan_angle'].astype('int8')
+        # Loop through the dataset
+        for start in range(0, total_points, chunk_size):
+            end = min(start + chunk_size, total_points)
+            print(f"  Processing points {start} to {end} ({(start/total_points)*100:.1f}%)...")
             
-        del data['scan_angle']
+            # A. Extract Chunk from NetCDF
+            data = get_chunk(ds, config, start, end)
+            chunk_count = len(data['x'])
+            
+            # B. Prepare Temporary LasData container
+            # Update header point_count to match THIS chunk, or LasData will allocate wrong memory size
+            header.point_count = chunk_count
+            chunk_las = laspy.LasData(header)
+            
+            # Assign Coordinates
+            chunk_las.x = data['x']
+            chunk_las.y = data['y']
+            chunk_las.z = data['z']
+            
+            # Handle Colors (Upscaling 8-bit to 16-bit for LAS compliance)
+            if 'red' in data:
+                if data['red'].max() <= 255:
+                    chunk_las.red = data['red'].astype('uint16') * 256
+                    chunk_las.green = data['green'].astype('uint16') * 256
+                    chunk_las.blue = data['blue'].astype('uint16') * 256
+                else:
+                    chunk_las.red = data['red'].astype('uint16')
+                    chunk_las.green = data['green'].astype('uint16')
+                    chunk_las.blue = data['blue'].astype('uint16')
 
-    # Assign Extra Bytes
-    for key in list(data.keys()):
-        setattr(las, key, data[key])
-        del data[key]
+            # Handle Time
+            if 'epoch' in data:
+                chunk_las.gps_time = data['epoch'].astype('float64')
 
-    las.write(output_path)
-    print("LAS/LAZ Write Complete.")
+            # Handle Intensity
+            if 'intensity' in data:
+                chunk_las.intensity = data['intensity'].astype('uint16')
 
-# --- 4. MAIN EXECUTION ---
+            # Handle Scan Angle
+            # LAS 1.4 (Format 6+) uses 0.006 degree resolution. 
+            # We clip values to avoid integer overflow crashes.
+            if 'scan_angle' in data:
+                if header.point_format.id >= 6:
+                    val = data['scan_angle'] / 0.006
+                    val = np.clip(val, -32768, 32767) # Safety clip for 16-bit signed
+                    chunk_las.scan_angle = val.astype('int16')
+                else:
+                    chunk_las.scan_angle_rank = data['scan_angle'].astype('int8')
+
+            # Handle Extra Bytes
+            for key in data.keys():
+                if key not in standard_fields:
+                    setattr(chunk_las, key, data[key])
+            
+            # C. Write Chunk to Disk
+            # We must pass the raw .points object to support lazrs (Rust backend) acceleration
+            writer.write_points(chunk_las.points)
+            
+            # D. Cleanup to free RAM
+            del data
+            del chunk_las
+            
+    print("LAS Chunked Write Complete.")
+
+def write_ply_standard(ds, config, output_path, count):
+    """Legacy full-load writer for PLY. Not optimized for large files."""
+    print("Warning: PLY writing is not chunked. High RAM usage expected.")
+    print("PLY support skipped in this memory-optimized version.")
+    print("Please use --format las or laz.")
+
 def main():
     args = parse_args()
     config = load_config(args.config)
     
+    # Determine Output Path
     if args.output:
         out_path = args.output
     else:
@@ -237,12 +220,31 @@ def main():
         ext = 'laz' if args.format == 'laz' else args.format
         out_path = f"{base}.{ext}"
 
-    data, metadata, count = extract_data_from_nc(args.input, config)
+    print(f"Opening {args.input}...")
+    # chunks=None ensures we don't load data until requested (Lazy Loading)
+    ds = xr.open_dataset(args.input, chunks=None)
+    count = ds.sizes['point']
+    print(f"Total points: {count}")
+
+    # --- DETERMINE CHUNK SIZE ---
+    # Priority: 1. CLI Argument, 2. Config File, 3. Hardcoded Default
+    default_chunk = 5_000_000
+    config_chunk = config.get('processing', {}).get('chunk_size', default_chunk)
     
-    if args.format == 'ply':
-        write_ply(data, metadata, out_path, count)
-    elif args.format in ['las', 'laz']:
-        write_las(data, metadata, out_path, config, count)
+    if args.chunk_size:
+        final_chunk_size = args.chunk_size
+        print(f"Using chunk size: {final_chunk_size} (CLI Override)")
+    else:
+        final_chunk_size = config_chunk
+        print(f"Using chunk size: {final_chunk_size} (Config)")
+
+    # Execute Writer
+    if args.format in ['las', 'laz']:
+        process_and_write_las_chunked(ds, config, out_path, count, final_chunk_size)
+    else:
+        write_ply_standard(ds, config, out_path, count)
+    
+    ds.close()
 
 if __name__ == "__main__":
     main()

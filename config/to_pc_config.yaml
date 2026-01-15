@@ -1,5 +1,9 @@
 # configuration for NetCDF to Point Cloud conversion
 
+# System / Performance Settings
+processing:
+  chunk_size: 5000000 # Number of points to process at once
+
 # LAS specific settings
 las:
   version: "1.4"
