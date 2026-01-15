@@ -17,7 +17,6 @@ def load_config(config_path):
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
     
-    # Safety check for empty config files
     if config is None:
         print(f"Error: Config file '{config_path}' appears to be empty.")
         sys.exit(1)
@@ -43,7 +42,7 @@ def extract_data_from_nc(nc_path, config):
     """
     print(f"Opening {nc_path}...")
     try:
-        ds = xr.open_dataset(nc_path, chunks=None) # Load into memory
+        ds = xr.open_dataset(nc_path, chunks=None) 
     except Exception as e:
         print(f"Failed to open NetCDF: {e}")
         sys.exit(1)
@@ -53,37 +52,23 @@ def extract_data_from_nc(nc_path, config):
     
     data = {}
     
-    # Iterate through mappings in config to see what exists in this file
+    # Iterate through mappings
     for nc_var, out_var in config['mappings'].items():
         if nc_var in ds:
             print(f"  -> Mapping {nc_var} to {out_var}")
             values = ds[nc_var].values
             
-            # --- SPECIAL HANDLING ---
+            # --- FIX: DATA INTEGRITY ---
             
-            # 1. Colors: Handle 16-bit to 8-bit scaling if needed
-            if out_var in ['red', 'green', 'blue']:
-                if values.max() > 255:
-                    values = (values / 256).astype('uint8')
-                else:
-                    values = values.astype('uint8')
-
-            # 2. Time: Convert datetime64 to float seconds
-            elif out_var == 'epoch':
+            # 1. Time: Convert datetime64 to float seconds (Unix Epoch)
+            if out_var == 'epoch':
                 if np.issubdtype(values.dtype, np.datetime64):
                     values = values.astype('datetime64[us]').astype('float64') / 1e6
-                values = values.astype('float32') # Standardize time to float
-
-            # 3. Coordinates: Force Double Precision (f8)
+            
+            # 2. Coordinates: Ensure Double Precision
             elif out_var in ['x', 'y', 'z']:
                 values = values.astype('float64')
 
-            # Default: Cast everything else to float32 or uint32 as appropriate
-            elif np.issubdtype(values.dtype, np.floating):
-                values = values.astype('float32')
-            elif np.issubdtype(values.dtype, np.integer):
-                values = values.astype('uint32')
-                
             data[out_var] = values
 
     # Gather Metadata for Headers
@@ -93,49 +78,68 @@ def extract_data_from_nc(nc_path, config):
     elif 'crs' in ds and 'crs_wkt' in ds['crs'].attrs:
         crs_string = "See_WKT_in_NetCDF"
 
+    # Calculate bbox safely
+    bbox = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    if 'x' in data and 'y' in data and 'z' in data:
+        bbox = [
+            float(data['x'].min()), float(data['x'].max()),
+            float(data['y'].min()), float(data['y'].max()),
+            float(data['z'].min()), float(data['z'].max())
+        ]
+
     metadata = {
         'crs': crs_string,
-        'source': os.path.basename(nc_path), # Use basename for cleaner headers
+        'source': os.path.basename(nc_path),
         'processing_time': time.time(),
-        'bbox': [
-            float(data['x'].min()), float(data['x'].max()),
-            float(data['y'].min()), float(data['y'].max())
-        ]
+        'bbox': bbox
     }
+    
+    # Clean up Xarray object
+    ds.close()
     
     return data, metadata, count
 
 # --- 3. WRITERS ---
 def write_ply(data, metadata, output_path, count):
-    """Writes data to a Binary PLY file using standard plyfile library."""
+    """Writes data to a Binary PLY file."""
     print(f"Writing PLY to {output_path}...")
     
-    # 1. Construct dtype list for numpy structure
     dtype_list = []
     
-    # Order matters slightly for readability in 3D viewers, specifically x,y,z first
+    # Priority order for visualization
     priority_order = ['x', 'y', 'z', 'nx', 'ny', 'nz', 'red', 'green', 'blue']
     sorted_keys = sorted(data.keys(), key=lambda k: priority_order.index(k) if k in priority_order else 99)
 
+    # Determine dtypes
     for key in sorted_keys:
-        # We assume the data types in 'data' dictionary are already correct (handled in extract step)
-        dtype_list.append((key, data[key].dtype))
+        if key in ['red', 'green', 'blue']:
+            dtype_list.append((key, 'uint8'))
+        else:
+            dtype_list.append((key, data[key].dtype))
 
-    # 2. Create structured array (Required by PlyElement.describe)
+    # Create structured array
     ply_struct = np.zeros(count, dtype=dtype_list)
+    
     for key in sorted_keys:
-        ply_struct[key] = data[key]
+        val = data[key]
+        
+        # Scale colors down for PLY (16-bit -> 8-bit)
+        if key in ['red', 'green', 'blue']:
+            if val.max() > 255:
+                ply_struct[key] = (val / 65535.0 * 255).astype('uint8')
+            else:
+                ply_struct[key] = val.astype('uint8')
+        else:
+            ply_struct[key] = val
+        
+        del data[key]
 
-    # 3. Construct Comment
     comment_str = (
         f"processing_time_epoch={metadata['processing_time']:.6f}; "
         f"crs_info={metadata['crs']}; "
         f"source_file={metadata['source']}; "
-        f"BBox = [{metadata['bbox'][0]:.4f}, {metadata['bbox'][1]:.4f}, ...]"
     )
 
-    # 4. Write using standard PlyData (No manual binary writing)
-    # text=False ensures binary format (standard for large clouds)
     el = PlyElement.describe(ply_struct, 'vertex')
     PlyData([el], text=False, comments=[comment_str]).write(output_path)
     
@@ -145,15 +149,20 @@ def write_las(data, metadata, output_path, config, count):
     """Writes data to LAS/LAZ using config settings."""
     print(f"Writing LAS/LAZ to {output_path}...")
     
-    # Setup Header
     las_conf = config['las']
+    
+    # Setup Header
     header = laspy.LasHeader(point_format=las_conf['point_format'], version=las_conf['version'])
+    
     header.scales = np.array(las_conf['scales'])
-    header.offsets = np.array([metadata['bbox'][0], metadata['bbox'][2], 0]) # Min x, Min y, 0
+    header.offsets = np.array([metadata['bbox'][0], metadata['bbox'][2], metadata['bbox'][4]])
 
-    # Register Extra Bytes (Anything that isn't standard LAS)
-    # Standard LAS 1.4 fields: x, y, z, intensity, return_number, ... red, green, blue, gps_time
-    standard_fields = ['x', 'y', 'z', 'intensity', 'red', 'green', 'blue', 'epoch']
+    if las_conf['version'] == "1.4":
+        header.global_encoding.gps_time_type = laspy.header.GpsTimeType.STANDARD
+
+    # Register Extra Bytes
+    # Note: 'scan_angle' is standard, so we exclude it from extra bytes
+    standard_fields = ['x', 'y', 'z', 'intensity', 'red', 'green', 'blue', 'epoch', 'scan_angle']
     
     extra_bytes = []
     for key, arr in data.items():
@@ -166,34 +175,53 @@ def write_las(data, metadata, output_path, config, count):
     # Create Data Object
     las = laspy.LasData(header)
     
-    # Assign Data
     las.x = data['x']
     las.y = data['y']
     las.z = data['z']
     
+    del data['x'], data['y'], data['z']
+    
+    # Scale colors up for LAS (8-bit -> 16-bit if needed)
     if 'red' in data:
-        # LAS expects 16-bit color. Check if we extracted 8-bit.
         if data['red'].max() <= 255:
+            print("  -> Upscaling 8-bit color to 16-bit for LAS...")
             las.red = data['red'].astype('uint16') * 256
             las.green = data['green'].astype('uint16') * 256
             las.blue = data['blue'].astype('uint16') * 256
         else:
-            las.red = data['red']
-            las.green = data['green']
-            las.blue = data['blue']
+            las.red = data['red'].astype('uint16')
+            las.green = data['green'].astype('uint16')
+            las.blue = data['blue'].astype('uint16')
+        
+        del data['red'], data['green'], data['blue']
 
     if 'epoch' in data:
         las.gps_time = data['epoch'].astype('float64')
+        del data['epoch']
 
     if 'intensity' in data:
-        las.intensity = data['intensity']
+        las.intensity = data['intensity'].astype('uint16')
+        del data['intensity']
+
+    # --- FIX: Handle Scan Angle for LAS 1.4 (Format 6+) vs Legacy ---
+    if 'scan_angle' in data:
+        # Formats 6+ (like Format 7) use a high-precision 'scan_angle'
+        if header.point_format.id >= 6:
+            # New Format: 16-bit, step size 0.006 degrees
+            # We must divide input degrees by 0.006 to get the integer storage value
+            # e.g. 90 degrees / 0.006 = 15,000
+            las.scan_angle = (data['scan_angle'] / 0.006).astype('int16')
+        else:
+            # Old Format (0-5): 8-bit 'rank', integer degrees
+            las.scan_angle_rank = data['scan_angle'].astype('int8')
+            
+        del data['scan_angle']
 
     # Assign Extra Bytes
-    for key in data.keys():
-        if key not in standard_fields:
-            setattr(las, key, data[key])
+    for key in list(data.keys()):
+        setattr(las, key, data[key])
+        del data[key]
 
-    # Write
     las.write(output_path)
     print("LAS/LAZ Write Complete.")
 
@@ -202,16 +230,13 @@ def main():
     args = parse_args()
     config = load_config(args.config)
     
-    # Determine Output Path
     if args.output:
         out_path = args.output
     else:
-        # Default: input.nc -> input.ply
         base = os.path.splitext(args.input)[0]
         ext = 'laz' if args.format == 'laz' else args.format
         out_path = f"{base}.{ext}"
 
-    # Execution Flow
     data, metadata, count = extract_data_from_nc(args.input, config)
     
     if args.format == 'ply':
