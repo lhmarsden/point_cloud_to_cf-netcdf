@@ -67,7 +67,7 @@ def get_metadata_safely(ds, config, source_filename):
 def get_chunk(ds, config, start, end):
     """
     Reads a specific slice [start:end] of the NetCDF variables into memory.
-    Enforces types to match legacy script behavior for compatibility.
+    Returns standard UNIX Timestamps for time fields.
     """
     data = {}
     
@@ -77,11 +77,14 @@ def get_chunk(ds, config, start, end):
             
             # --- TYPE ENFORCEMENT ---
             
-            # 1. Time: Convert datetime to float seconds (Unix Epoch)
+            # 1. Time: Convert datetime to Standard Unix Epoch (Seconds since 1970)
             if out_var == 'epoch':
                 if np.issubdtype(values.dtype, np.datetime64):
+                    # Convert to Unix Seconds (float64)
                     values = values.astype('datetime64[us]').astype('float64') / 1e6
-                values = values.astype('float32')
+                
+                # Keep float64 for time to ensure precision
+                values = values.astype('float64')
 
             # 2. Coordinates: Force Double Precision
             elif out_var in ['x', 'y', 'z']:
@@ -103,6 +106,7 @@ def get_chunk(ds, config, start, end):
 def process_and_write_las_chunked(ds, config, output_path, total_points, chunk_size, input_filename):
     """
     Opens LAS file for writing, loops through NetCDF in chunks.
+    Converts Unix Time to LAS Adjusted Standard GPS Time.
     """
     metadata = get_metadata_safely(ds, config, input_filename)
     las_conf = config['las']
@@ -162,15 +166,20 @@ def process_and_write_las_chunked(ds, config, output_path, total_points, chunk_s
                     chunk_las.green = data['green'].astype('uint16')
                     chunk_las.blue = data['blue'].astype('uint16')
 
+            # Handle Time: Convert Unix (1970) to Adjusted GPS (1980 - 1e9)
             if 'epoch' in data:
-                chunk_las.gps_time = data['epoch'].astype('float64')
+                # GPS Offset (1970 to 1980) = 315964800
+                # LAS Offset = 1000000000
+                # Total Deduction = 1315964800
+                chunk_las.gps_time = data['epoch'] - 1315964800.0
 
             if 'intensity' in data:
                 chunk_las.intensity = data['intensity'].astype('uint16')
 
-            # Handle Scan Angle (Safety Clip)
+            # Handle Scan Angle (Safety Clip & Scaling for LAS 1.4)
             if 'scan_angle' in data:
                 if header.point_format.id >= 6:
+                    # LAS 1.4 stores float angle as int16 with 0.006 scale
                     val = data['scan_angle'] / 0.006
                     val = np.clip(val, -32768, 32767)
                     chunk_las.scan_angle = val.astype('int16')
@@ -194,7 +203,7 @@ def process_and_write_las_chunked(ds, config, output_path, total_points, chunk_s
 def process_and_write_ply_chunked(ds, config, output_path, total_points, chunk_size, input_filename):
     """
     Writes a Binary PLY file in chunks.
-    Matches legacy script header format exactly, writing manually to avoid RAM issues.
+    Uses standard Unix Timestamps for 'epoch'.
     """
     metadata = get_metadata_safely(ds, config, input_filename)
     
@@ -299,7 +308,8 @@ def main():
         out_path = f"{base}.{ext}"
 
     print(f"Opening {args.input}...")
-    ds = xr.open_dataset(args.input, chunks=None)
+    # Use empty chunks to enable Dask/Lazy loading for metadata calculation
+    ds = xr.open_dataset(args.input, chunks={})
     count = ds.sizes['point']
     print(f"Total points: {count}")
     

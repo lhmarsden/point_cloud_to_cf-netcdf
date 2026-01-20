@@ -39,4 +39,6 @@ mappings:
   py: py
   
   # Time
-  gps_time: epoch
+  gps_time: epoch    # Old naming convention
+  epoch_time: epoch  # New naming convention
+  time: epoch        # Another common convention
