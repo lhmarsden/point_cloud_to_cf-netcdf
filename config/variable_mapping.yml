@@ -249,7 +249,7 @@ intensity: # Name of variable to be used in NetCDF file
     - spectral intensity
   attributes: # Variable attributes to be written to NetCDF file for the variable
     units: '1'
-    long_name: 'strength of returning signal to the LiDAR'
+    long_name: 'strength of returning signal to the instrument'
     #standard_name: 'toa_outgoing_radiance_per_unit_wavelength'
     coverage_content_type: 'physicalMeasurement'
     coordinates: 'epoch_time latitude longitude Z'
