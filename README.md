@@ -96,15 +96,13 @@ python3 convert_multiple_files.py /path/to/file.csv
   - **Description:** Path to the input CSV file. Each row in this CSV represents a unique set of arguments passed to the `pc_to_netcdf.py` script.
   - **Example:** `input.csv`
 
-
-
 ## Convert CF-NetCDF back to Point Cloud
 
 Script: `netcdf_to_pc.py`
 
-This script allows you to convert a CF-NetCDF file back into standard point cloud formats (PLY, LAS, or LAZ). It is designed to handle very large datasets efficiently by processing data in "chunks" to minimize RAM usage.
+This script converts CF-NetCDF files back into standard point cloud formats (PLY, LAS, or LAZ). It is optimized for large datasets and strictly adheres to LAS 1.4 specifications.
 
-### Example usage:
+### Example usage
 
 **Basic conversion to PLY:**
 ```bash
@@ -116,7 +114,7 @@ python3 netcdf_to_pc.py /path/to/input.nc
 python3 netcdf_to_pc.py /path/to/input.nc --format laz --chunk-size 1000000
 ```
 
-### Arguments:
+### Arguments
 
 - `input` (str, required)
   - **Description:** Path to the input NetCDF file.
@@ -136,11 +134,21 @@ python3 netcdf_to_pc.py /path/to/input.nc --format laz --chunk-size 1000000
 
 - `--chunk-size` (int, optional)
   - **Description:** Overrides the number of points processed per iteration. Lower this value if you are running out of RAM on large files.
-  - **Default:** Pulled from config file (usually `5000000`).
+  - **Default:** Pulled from config file (usually `5,000,000`).
+
+### Technical Notes
+
+#### Time Encoding
+The script handles time differently depending on the output format to ensure compliance with standards:
+*   **PLY:** Time is written as **Unix Epoch** (seconds since 1970-01-01).
+*   **LAS/LAZ:** Time is converted to **Adjusted Standard GPS Time** (Satellite GPS Time minus $1 \times 10^9$), as required by the LAS 1.4 specification.
+
+#### Georeferencing
+The script prioritizes **OGC WKT** (Well-Known Text) strings found in the NetCDF `crs` variable. If absent, it falls back to PROJ strings. This CRS information is embedded directly into the LAS VLRs.
 
 ### Configuration
 
-The script relies on `config/to_pc_config.yaml` to map NetCDF variables (e.g., `gps_time`) back to specific Point Cloud dimensions (e.g., `epoch`). It also handles format-specific settings, such as LAS version and scale factors.
+The script relies on `config/to_pc_config.yaml` to map NetCDF variables to Point Cloud dimensions. It supports mapping multiple potential NetCDF variable names to a single output dimension (e.g., handling `epoch_time` or `gps_time`).
 
 **Example Config:**
 ```yaml
@@ -155,5 +163,12 @@ mappings:
   Y: y
   Z: z
   red: red
+  
+  # Time Mapping (First match found is used)
+  epoch_time: epoch
   gps_time: epoch
+  time: epoch
+  
+  # Sensor info
+  intensity: intensity # If multidimensional, this is skipped automatically
 ```
