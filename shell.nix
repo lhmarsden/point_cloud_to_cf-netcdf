@@ -17,10 +17,11 @@ pkgs.mkShell {
     pkgs.python3Packages.flask
     pkgs.python3Packages.plyfile
     pkgs.python3Packages.xarray
-    pkgs.python3Packages.dask  
+    pkgs.python3Packages.dask
     pkgs.python3Packages.laspy
     pkgs.python3Packages.lazrs
     pkgs.python3Packages.numpy
+    pkgs.python3Packages.pyproj  
     
     # Editor
     pkgs.vscodium

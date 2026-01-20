@@ -7,6 +7,7 @@ import argparse
 import yaml
 import laspy
 import copy
+import pyproj # Required for CRS handling
 
 def load_config(config_path):
     """Loads variables and settings from a YAML file."""
@@ -35,12 +36,20 @@ def parse_args():
 def get_metadata_safely(ds, config, source_filename):
     """
     Extracts CRS and Bounding Box without loading the entire dataset into RAM.
+    Prioritizes WKT (standard for LAS 1.4) over PROJ strings.
     """
-    crs_string = "unknown_crs"
-    if 'datum' in ds.attrs:
-        crs_string = ds.attrs['datum']
-    elif 'crs' in ds and 'crs_wkt' in ds['crs'].attrs:
+    crs_string = None
+    
+    # 1. Try to get WKT from the 'crs' variable (Standard CF-NetCDF)
+    if 'crs' in ds and 'crs_wkt' in ds['crs'].attrs:
         crs_string = ds['crs'].attrs['crs_wkt']
+    
+    # 2. Fallback to global 'datum' attribute (PROJ string)
+    if crs_string is None and 'datum' in ds.attrs:
+        crs_string = ds.attrs['datum']
+
+    if crs_string is None:
+        crs_string = "unknown_crs"
 
     print("Calculating Bounding Box (Lazy)...")
     
@@ -107,6 +116,7 @@ def process_and_write_las_chunked(ds, config, output_path, total_points, chunk_s
     """
     Opens LAS file for writing, loops through NetCDF in chunks.
     Converts Unix Time to LAS Adjusted Standard GPS Time.
+    Injects CRS into LAS Header using pyproj.
     """
     metadata = get_metadata_safely(ds, config, input_filename)
     las_conf = config['las']
@@ -119,7 +129,17 @@ def process_and_write_las_chunked(ds, config, output_path, total_points, chunk_s
     if las_conf['version'] == "1.4":
         header.global_encoding.gps_time_type = laspy.header.GpsTimeType.STANDARD
 
-    # 2. Define Extra Bytes
+    # 2. Add Coordinate Reference System (CRS)
+    if metadata['crs'] != "unknown_crs":
+        try:
+            # Parse CRS string using pyproj (handles WKT and PROJ strings)
+            crs_object = pyproj.CRS.from_string(metadata['crs'])
+            header.add_crs(crs_object)
+            print("Successfully added CRS to LAS header.")
+        except Exception as e:
+            print(f"Warning: Could not parse CRS string for LAS header: {e}")
+
+    # 3. Define Extra Bytes
     standard_fields = ['x', 'y', 'z', 'intensity', 'red', 'green', 'blue', 'epoch', 'scan_angle']
     extra_bytes = []
     
@@ -131,7 +151,7 @@ def process_and_write_las_chunked(ds, config, output_path, total_points, chunk_s
     if extra_bytes:
         header.add_extra_dims(extra_bytes)
 
-    # 3. Create Writer Header (Requires Total Count)
+    # 4. Create Writer Header (Requires Total Count)
     writer_header = copy.copy(header)
     writer_header.point_count = total_points
 
