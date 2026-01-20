@@ -7,7 +7,7 @@ import argparse
 import yaml
 import laspy
 import copy
-import pyproj # Required for CRS handling
+import pyproj
 
 def load_config(config_path):
     """Loads variables and settings from a YAML file."""
@@ -117,6 +117,7 @@ def process_and_write_las_chunked(ds, config, output_path, total_points, chunk_s
     Opens LAS file for writing, loops through NetCDF in chunks.
     Converts Unix Time to LAS Adjusted Standard GPS Time.
     Injects CRS into LAS Header using pyproj.
+    Skips multidimensional intensity (hyperspectral).
     """
     metadata = get_metadata_safely(ds, config, input_filename)
     las_conf = config['las']
@@ -132,7 +133,6 @@ def process_and_write_las_chunked(ds, config, output_path, total_points, chunk_s
     # 2. Add Coordinate Reference System (CRS)
     if metadata['crs'] != "unknown_crs":
         try:
-            # Parse CRS string using pyproj (handles WKT and PROJ strings)
             crs_object = pyproj.CRS.from_string(metadata['crs'])
             header.add_crs(crs_object)
             print("Successfully added CRS to LAS header.")
@@ -144,6 +144,8 @@ def process_and_write_las_chunked(ds, config, output_path, total_points, chunk_s
     extra_bytes = []
     
     for nc_var, out_var in config['mappings'].items():
+        # Note: We can't easily check for multidimensionality here without loading data,
+        # so we assume scalar. The loop below handles the actual skipping if multidim.
         if nc_var in ds and out_var not in standard_fields:
             dtype = ds[nc_var].dtype
             extra_bytes.append(laspy.ExtraBytesParams(name=out_var, type=dtype))
@@ -157,6 +159,9 @@ def process_and_write_las_chunked(ds, config, output_path, total_points, chunk_s
 
     print(f"Starting Chunked LAS Write to {output_path} (Chunk Size: {chunk_size})...")
     
+    # Flag to ensure we only warn about hyperspectral data once
+    hyperspectral_warning_shown = False
+
     with laspy.open(output_path, mode="w", header=writer_header) as writer:
         
         for start in range(0, total_points, chunk_size):
@@ -167,6 +172,14 @@ def process_and_write_las_chunked(ds, config, output_path, total_points, chunk_s
             data = get_chunk(ds, config, start, end)
             chunk_count = len(data['x'])
             
+            # Check for multidimensional intensity (Hyperspectral)
+            if 'intensity' in data and data['intensity'].ndim > 1:
+                if not hyperspectral_warning_shown:
+                    print(f"Warning: 'intensity' is multidimensional {data['intensity'].shape}. "
+                          "Hyperspectral data detected. Skipping intensity field.")
+                    hyperspectral_warning_shown = True
+                del data['intensity']
+
             # B. Prepare Container
             header.point_count = chunk_count
             chunk_las = laspy.LasData(header)
@@ -188,9 +201,6 @@ def process_and_write_las_chunked(ds, config, output_path, total_points, chunk_s
 
             # Handle Time: Convert Unix (1970) to Adjusted GPS (1980 - 1e9)
             if 'epoch' in data:
-                # GPS Offset (1970 to 1980) = 315964800
-                # LAS Offset = 1000000000
-                # Total Deduction = 1315964800
                 chunk_las.gps_time = data['epoch'] - 1315964800.0
 
             if 'intensity' in data:
@@ -199,7 +209,6 @@ def process_and_write_las_chunked(ds, config, output_path, total_points, chunk_s
             # Handle Scan Angle (Safety Clip & Scaling for LAS 1.4)
             if 'scan_angle' in data:
                 if header.point_format.id >= 6:
-                    # LAS 1.4 stores float angle as int16 with 0.006 scale
                     val = data['scan_angle'] / 0.006
                     val = np.clip(val, -32768, 32767)
                     chunk_las.scan_angle = val.astype('int16')
@@ -209,6 +218,9 @@ def process_and_write_las_chunked(ds, config, output_path, total_points, chunk_s
             # Handle Extra Bytes
             for key in data.keys():
                 if key not in standard_fields:
+                    # Double check we aren't trying to write multidim extra bytes
+                    if data[key].ndim > 1:
+                        continue 
                     setattr(chunk_las, key, data[key])
             
             # C. Write Raw Points
@@ -223,7 +235,7 @@ def process_and_write_las_chunked(ds, config, output_path, total_points, chunk_s
 def process_and_write_ply_chunked(ds, config, output_path, total_points, chunk_size, input_filename):
     """
     Writes a Binary PLY file in chunks.
-    Uses standard Unix Timestamps for 'epoch'.
+    Skips multidimensional intensity (hyperspectral).
     """
     metadata = get_metadata_safely(ds, config, input_filename)
     
@@ -232,6 +244,14 @@ def process_and_write_ply_chunked(ds, config, output_path, total_points, chunk_s
     # 1. Peek at first chunk to determine Types and Order
     peek_data = get_chunk(ds, config, 0, 1)
     
+    # Check for multidimensional intensity in peek
+    skip_intensity = False
+    if 'intensity' in peek_data and peek_data['intensity'].ndim > 1:
+        print(f"Warning: 'intensity' is multidimensional {peek_data['intensity'].shape}. "
+              "Hyperspectral data detected. Skipping intensity field in PLY.")
+        del peek_data['intensity']
+        skip_intensity = True
+
     # Priority order matching legacy requirements
     priority_order = ['x', 'y', 'z', 'nx', 'ny', 'nz', 'red', 'green', 'blue']
     sorted_keys = sorted(peek_data.keys(), key=lambda k: priority_order.index(k) if k in priority_order else 99)
@@ -241,6 +261,11 @@ def process_and_write_ply_chunked(ds, config, output_path, total_points, chunk_s
     header_props = []
 
     for key in sorted_keys:
+        # Double check if any other keys are multidimensional and skip them
+        if peek_data[key].ndim > 1:
+            print(f"Warning: Variable '{key}' is multidimensional. Skipping in PLY.")
+            continue
+
         if key in ['red', 'green', 'blue']:
             # Force color to uint8 (uchar)
             dtype_list.append((key, 'uint8'))
@@ -273,7 +298,7 @@ def process_and_write_ply_chunked(ds, config, output_path, total_points, chunk_s
         for prop in header_props:
             f.write(f"{prop}\n".encode('utf-8'))
             
-        # Write Comment (Placed at the end of header as requested)
+        # Write Comment
         comment_str = (
             f"comment processing_time_epoch={metadata['processing_time']:.6f}; "
             f"utm_crs={metadata['crs']}; "
@@ -293,10 +318,19 @@ def process_and_write_ply_chunked(ds, config, output_path, total_points, chunk_s
             data = get_chunk(ds, config, start, end)
             chunk_count = len(data['x'])
             
+            # Filter hyperspectral intensity if flag is set
+            if skip_intensity and 'intensity' in data:
+                del data['intensity']
+
             # Create structured array
             chunk_struct = np.zeros(chunk_count, dtype=dtype_list)
             
             for key in sorted_keys:
+                # Ensure key exists (it might have been skipped if multidim)
+                if key not in data: continue
+                # Skip if current chunk data is unexpectedly multidim
+                if data[key].ndim > 1: continue
+
                 val = data[key]
                 
                 # Downscale colors for PLY
