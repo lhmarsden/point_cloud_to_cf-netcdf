@@ -115,7 +115,7 @@ def las_to_df(las_filepath, cf_crs, variable_mapping, xcoord=None, ycoord=None, 
     print('x,y,z added to dict')
 
     # List of variables to extract
-    variable_list = ['blue', 'red', 'green', 'scan_angle_rank', 'gps_time', 'intensity']
+    variable_list = ['blue', 'red', 'green', 'scan_angle_rank', 'epoch', 'intensity']
 
     # Iterate over variable_list and check if the variable exists in las.point_format.dimensions
     for var in variable_list:
