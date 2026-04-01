@@ -14,3 +14,21 @@ visualise_data*
 count_lines*
 *png
 *.sh
+test_data/
+project/
+local/
+
+
+# Ignore Python Environment
+.venv/
+__pycache__/
+*.pyc
+
+# Ignore IDE settings
+.vscode/
+
+# Ignore Test Data (Don't upload massive NetCDFs!)
+*.nc
+*.ply
+*.las
+*.laz
