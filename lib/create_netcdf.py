@@ -62,7 +62,7 @@ class NetCDF:
             band_var.setncattr('coverage_content_type', 'coordinate')
             logger.info(f'Wrote coordinate variable for each wavelength band ({num_bands} total)')
 
-    def write_1d_data(self, pc_df, variable_mapping):
+    def write_1d_data(self, pc_df, variable_mapping, time_units=None):
 
         # Loop through columns in input data
         for col in pc_df.columns:
@@ -93,6 +93,9 @@ class NetCDF:
                                 cast_value = value
 
                             netcdf_variable.setncattr(attribute, cast_value)
+                        # Override time units with the dynamic per-file reference
+                        if variable == 'epoch_time' and time_units is not None:
+                            netcdf_variable.setncattr('units', time_units)
                         logger.info(f'Data and metadata written to {variable} variable')
 
     def write_2d_data(self, wavelength_source, variable_mapping, wavelengths=None):
@@ -170,7 +173,7 @@ class NetCDF:
 
 
 def create_netcdf(pc_df, wavelength_source, variable_mapping, output_filepath,
-                global_attributes, cf_crs, wavelengths=None):
+                global_attributes, cf_crs, wavelengths=None, time_units=None):
     """
     Create a CF-compliant NetCDF file.
 
@@ -181,6 +184,8 @@ def create_netcdf(pc_df, wavelength_source, variable_mapping, output_filepath,
     global_attributes : dict of global attributes.
     cf_crs : dict of CRS variable attributes.
     wavelengths : optional 1D array of wavelength centres (for band coordinate).
+    time_units : optional CF units string for the epoch_time variable, e.g.
+                 "seconds since 2024-05-01 12:00:00 UTC". Overrides the YAML default.
     """
     netcdf = NetCDF(output_filepath)
 
@@ -190,10 +195,120 @@ def create_netcdf(pc_df, wavelength_source, variable_mapping, output_filepath,
     if cf_crs:
         netcdf.define_grid_mapping(cf_crs)
 
-    netcdf.write_1d_data(pc_df, variable_mapping)
+    netcdf.write_1d_data(pc_df, variable_mapping, time_units=time_units)
 
     if wavelength_source is not None:
         netcdf.write_2d_data(wavelength_source, variable_mapping, wavelengths=wavelengths)
 
     netcdf.assign_global_attributes(global_attributes)
     netcdf.close()
+
+def create_netcdf_stream(metadata, data_generator, variable_mapping, output_filepath, global_attributes, cf_crs, time_units=None, chunk_write_size=250_000):
+    """
+    Creates NetCDF by streaming data.
+    Only creates variables that actually exist in the input stream.
+
+    chunk_write_size controls the NetCDF4 internal storage chunk size (chunksizes parameter).
+    It must match or be smaller than the data generator's chunk_size so that each write
+    aligns to at most a few NetCDF chunks — avoiding the default behaviour where a fixed
+    dimension causes netCDF4 to buffer the entire variable in memory on every slice write.
+    """
+    import numpy as np
+    import netCDF4 as nc
+
+    # Initialize Dataset
+    with nc.Dataset(output_filepath, mode='w', format='NETCDF4') as ncfile:
+
+        # 1. Dimensions
+        num_points = metadata['num_points']
+        ncfile.createDimension('point', size=num_points)
+        
+        # 2. Grab the first chunk to see what data we ACTUALLY have
+        try:
+            first_chunk = next(data_generator)
+        except StopIteration:
+            print("Error: Input file appears to be empty.")
+            return
+
+        # 3. Create Variables
+        nc_vars = {}
+
+        # Only create variables that are actually present in the data.
+        # Coordinate variables (X/Y/Z/lat/lon/altitude) are included only if the
+        # generator produced them — which depends on the variable_mapping config.
+        # This avoids writing empty/zero-filled variables for coords that were
+        # intentionally excluded (e.g. lat/lon when only projected coords are wanted).
+        coords = ['latitude', 'longitude', 'altitude', 'X', 'Y', 'Z']
+        vars_to_create = {c for c in coords if c in first_chunk}
+        for var_name in variable_mapping.keys():
+            if var_name in first_chunk:
+                vars_to_create.add(var_name)
+
+        for var_name in vars_to_create:
+            # Determine properties from mapping or defaults
+            if var_name in variable_mapping:
+                details = variable_mapping[var_name]
+                dtype = details.get('dtype', 'f8')
+                attributes = details.get('attributes', {})
+            else:
+                # Fallback for coords not explicitly in mapping (unlikely given your config)
+                dtype = 'f8'
+                attributes = {}
+
+            # Create variable with explicit chunksizes so netCDF4 never has to buffer
+            # the full dimension in memory when writing partial slices.
+            # Clamp to num_points so small test files don't raise "chunksize > dimension".
+            actual_chunk = min(chunk_write_size, num_points)
+            v = ncfile.createVariable(var_name, dtype, ('point',), zlib=True, complevel=1,
+                                      chunksizes=(actual_chunk,))
+            
+            # Apply attributes
+            for attr, val in attributes.items():
+                v.setncattr(attr, val)
+            # Override time units with the dynamic per-file reference
+            if var_name == 'epoch_time' and time_units is not None:
+                v.setncattr('units', time_units)
+
+            nc_vars[var_name] = v
+
+        # 4. Write CRS
+        if cf_crs:
+            crs = ncfile.createVariable('crs', 'i4')
+            for attr, value in cf_crs.items():
+                crs.setncattr(attr, value)
+            
+        # 5. Write Global Attributes
+        for attr, value in global_attributes.items():
+            if value not in [None, '']:
+                ncfile.setncattr(attr, value)
+
+        # 6. Write the FIRST chunk (which we already pulled)
+        print(f"Starting stream write for {num_points} points...")
+        current_idx = 0
+        
+        chunk_len = len(first_chunk['X'])
+        end_idx = current_idx + chunk_len
+        
+        for var_name, nc_var in nc_vars.items():
+            if var_name in first_chunk:
+                nc_var[current_idx:end_idx] = first_chunk[var_name]
+        
+        current_idx = end_idx
+        ncfile.sync()
+        print(f"  Processed {current_idx} / {num_points} points...")
+
+        # 7. Write the REST of the stream
+        for chunk_idx, data_dict in enumerate(data_generator):
+            chunk_len = len(data_dict['X'])
+            end_idx = current_idx + chunk_len
+
+            for var_name, nc_var in nc_vars.items():
+                if var_name in data_dict:
+                    nc_var[current_idx:end_idx] = data_dict[var_name]
+
+            current_idx = end_idx
+            if chunk_idx % 10 == 0:
+                ncfile.sync()  # flush compressed buffers to disk, freeing RAM
+                print(f"  Processed {current_idx} / {num_points} points...")
+
+    print(f"Finished writing {output_filepath}")

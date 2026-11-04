@@ -1,8 +1,12 @@
 import os
-from lib.read_data import read_hyspex_stream, ply_to_df, las_to_df, get_cf_crs, list_variables_in_ply
+import laspy
+from lib.read_data import read_hyspex_stream, ply_to_df, las_to_df, get_cf_crs, list_variables_in_ply, list_variables_in_las
 from lib.create_netcdf import create_netcdf
 from lib.global_attributes import GlobalAttributes
 from lib.variable_mapping import VariableMapping
+from lib.read_data import get_las_metadata, read_las_generator, compute_gps_time_reference, compute_time_coverage
+from lib.create_netcdf import create_netcdf_stream
+from datetime import datetime, timezone 
 import argparse
 import yaml
 import toml
@@ -119,13 +123,6 @@ def main():
         help='Global attributes defined by user. Should be either 1) a JSON string with key/value pairs for global attributes, 2) a yaml file including this information 3) A toml file including this information'
         )
     parser.add_argument(
-        '-mga',
-        '--met_global_attributes',
-        type=str,
-        help='Global attributes defined by MET, a yaml file',
-        default='config/global_attributes.yml'
-        )
-    parser.add_argument(
         '-vm',
         '--variable_mapping',
         type=str,
@@ -196,19 +193,27 @@ def main():
     else:
         logger.error("Global attributes must be provided in a JSON string or TOML or YAML file.")
 
+    cf_crs = None
+    crs_errors = []
+    crs_warnings = []
+
     # Load in the grid mapping config file if it exists and not None
     if args.crs_config:
+        # Check existence BEFORE the try block to avoid catching SystemExit
+        if not os.path.exists(args.crs_config):
+            logger.error(f"Error: The grid mapping configuration file '{args.crs_config}' could not be found.")
+            sys.exit(1)
+
         try:
             logger.info(f"Loading grid mapping from config file")
-            if not os.path.exists(args.crs_config):
-                logger.error(f"Error: The grid mapping configuration file '{args.crs_config}' could not be found.")
-                logger.error("Check that the filepath is correct")
-                sys.exit(1)
             with open(args.crs_config, "r") as file:
                 cf_crs = yaml.safe_load(file)
             logger.info("CF grid mapping configuration file loaded successfully")
-        except:
-            crs_errors, crs_warnings = [f'Unable to load CRS from {args.crs_config}']
+        except Exception as e:
+            # Fix the unpacking error by providing two lists
+            cf_crs = None
+            crs_errors = [f'Unable to load CRS from {args.crs_config}: {e}']
+            crs_warnings = []
     elif args.proj4str:
         # Check if valid proj4 string and convert that
         logger.info("Trying to calculate a CF grid mapping from the PROJ.4 string")
@@ -216,6 +221,20 @@ def main():
     elif args.ply_filepath:
         logger.info("Trying to calculate a CF grid mapping from the PROJ.4 string in the PLY header comment")
         cf_crs, crs_errors, crs_warnings = get_cf_crs(ply_filepath=args.ply_filepath)
+    elif args.las_filepath:
+        logger.info("Trying to read CRS from LAS file VLRs")
+        try:
+            with laspy.open(args.las_filepath) as f:
+                crs = f.header.parse_crs()
+            if crs is not None:
+                cf_crs = crs.to_cf()
+                logger.info("CRS read successfully from LAS file")
+            else:
+                crs_warnings = ["No CRS found in LAS file VLRs. Provide -crs_config or -proj4str if coordinate transformation is needed."]
+                logger.warning(crs_warnings[0])
+        except Exception as e:
+            crs_warnings = [f"Could not parse CRS from LAS file: {e}"]
+            logger.warning(crs_warnings[0])
 
     # Determine the output filepath if not provided as an argument
     if args.output_filepath is None:
@@ -247,15 +266,20 @@ def main():
     if args.ply_filepath:
         logger.info("Checking what variables are in the PLY file")
         variable_names = list_variables_in_ply(args.ply_filepath)
-    # elif args.las_filepath:
-    #     logger.info("Checking what variables are in the LAS file")
-    #     variable_names = list_variables_in_las()
+    elif args.las_filepath:
+        logger.info("Checking what variables are in the LAS file")
+        variable_names = list_variables_in_las(args.las_filepath)
+
+
+    # Initialize variable_names if it wasn't set (safety catch)
+    if 'variable_names' not in locals():
+         logger.error("No input file (PLY or LAS) provided or logic failed.")
+         sys.exit(1)
 
     if args.hdr_filepath:
         variable_names = variable_names + ['intensity']
 
     vm_errors, vm_warnings = variable_mapping.check(variable_names)
-    #vm_errors, vm_warnings = [], [] # Use this line to bypass checking of variables
 
     # Read the PLY file into a pandas DataFrame
     data_errors = []
@@ -268,9 +292,93 @@ def main():
         pc_df = ply_to_df(args.ply_filepath, cf_crs, variable_mapping.dict, args.xcoord, args.ycoord, args.zcoord)
         logger.info(f"Data from {args.ply_filepath} loaded in successfully")
     elif args.las_filepath:
-        logger.info(f"Trying to load the data from {args.las_filepath} and write them to a pandas dataframe")
-        pc_df = las_to_df(args.las_filepath, cf_crs, variable_mapping.dict, args.xcoord, args.ycoord, args.zcoord)
-        logger.info(f"Data from {args.las_filepath} loaded in successfully")
+        logger.info(f"Processing LAS in streaming mode: {args.las_filepath}")
+        
+        # 1. Load Global Attributes EARLY (normally done later in the script)
+        # We need them now because we are going to write and exit immediately.
+        logger.info("Reading in global attributes (Early Load)")
+        global_attributes = GlobalAttributes()
+        global_attributes.read_global_attributes(args.user_global_attributes, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config', 'global_attributes.yml'))
+
+        # 2. Get Metadata Fast (Header only, no heavy memory usage)
+        metadata = get_las_metadata(args.las_filepath, cf_crs)
+        
+        # 3. Update Global Attributes with bounds from header
+        ga = global_attributes.dict
+        if metadata['lat_min'] is not None:
+            ga['geospatial_lat_min'] = metadata['lat_min']
+            ga['geospatial_lat_max'] = metadata['lat_max']
+            ga['geospatial_lon_min'] = metadata['lon_min']
+            ga['geospatial_lon_max'] = metadata['lon_max']
+        ga['geospatial_vertical_min'] = metadata['z_min']
+        ga['geospatial_vertical_max'] = metadata['z_max']
+        
+        # Add creation timestamp
+        if 'date_created' not in ga:
+            now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+            ga['date_created'] = now
+            ga['history'] = f"{now}: Converted from LAS to NetCDF via streaming."
+
+        # 3b. Derive time coverage from GPS time if not provided by the user
+        leap_seconds = variable_mapping.dict.get('epoch_time', {}).get('gps_leap_seconds', 18)
+        tc_start, tc_end = compute_time_coverage(args.las_filepath, leap_seconds)
+        if tc_start is not None:
+            if 'time_coverage_start' not in ga:
+                ga['time_coverage_start'] = tc_start
+                ga['time_coverage_end'] = tc_end
+                logger.info(f"Auto-derived time_coverage_start={tc_start}, time_coverage_end={tc_end} from GPS time")
+            else:
+                logger.info(f"Using user-provided time_coverage_start={ga['time_coverage_start']}, time_coverage_end={ga['time_coverage_end']}")
+
+        # 3c. Validate global attributes and variable mapping (mirrors PLY path)
+        reformatting_errors, reformatting_warnings = global_attributes.reformat_attributes()
+        ga_errors, ga_warnings = global_attributes.check()
+
+        all_errors = crs_errors + vm_errors + reformatting_errors + ga_errors
+        all_warnings = crs_warnings + vm_warnings + reformatting_warnings + ga_warnings
+
+        if all_warnings:
+            logger.warning('\nWarnings\nWe recommend that these are fixed, but you can choose to ignore them:\n')
+            for warning in all_warnings:
+                logger.warning(warning)
+        if all_errors:
+            logger.error('\n\nThe following errors were found:\n')
+            for error in all_errors:
+                logger.error(error)
+            logger.error('No NetCDF file has been created. Please correct the errors and try again.\n\n')
+            sys.exit(1)
+
+        # 4. Compute GPS time reference (also validates Adjusted GPS Time encoding)
+        gps_time_0, time_units = compute_gps_time_reference(args.las_filepath, leap_seconds)
+        logger.info(f"GPS time reference: {time_units}")
+
+        # 5. Create the Data Generator (Lazy Reader)
+        # chunk_size controls how many points are held in RAM at once.
+        # Must match chunk_write_size passed to create_netcdf_stream so that
+        # each write aligns with netCDF4's internal storage chunks.
+        chunk_size = 250_000
+        las_generator = read_las_generator(
+            args.las_filepath,
+            cf_crs,
+            variable_mapping.dict,
+            chunk_size=chunk_size,
+            gps_time_offset=gps_time_0
+        )
+
+        # 6. Stream Write to NetCDF
+        create_netcdf_stream(
+            metadata,
+            las_generator,
+            variable_mapping.dict,
+            args.output_filepath,
+            ga,
+            cf_crs,
+            time_units=time_units,
+            chunk_write_size=chunk_size,
+        )
+        
+        logger.info("LAS Streaming conversion complete.")
+        sys.exit(0) # <--- CRITICAL: Stop here so we don't hit the old logic
     else:
         logger.error("Error: No input file provided")
         sys.exit(1)
@@ -286,11 +394,10 @@ def main():
     # Read the global attributes from the specified CSV file
     logger.info("Reading in global attributes")
     global_attributes = GlobalAttributes()
-    global_attributes.read_global_attributes(args.user_global_attributes, args.met_global_attributes)
+    global_attributes.read_global_attributes(args.user_global_attributes, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config', 'global_attributes.yml'))
 
     reformatting_errors, reformatting_warnings = global_attributes.reformat_attributes()
     ga_errors, ga_warnings = global_attributes.check()
-    #ga_errors, ga_warnings = [], [] # Use this line to bypass check of global attributes
 
     errors = data_errors + ga_errors + reformatting_errors + vm_errors + crs_errors
     warnings = data_warnings + ga_warnings + reformatting_warnings + vm_warnings + crs_warnings
@@ -369,6 +476,7 @@ def main():
             wavelength_dfs = None
             output_filepath = args.output_filepath
 
+            global_attributes.derive(pc_df)
             logger.info("Trying to create CF-NetCDF file(s)")
             create_netcdf(pc_df, wavelength_dfs, variable_mapping.dict, output_filepath, global_attributes.dict, cf_crs)
 

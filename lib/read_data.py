@@ -18,16 +18,7 @@ def combine_dataframes(dfs):
     '''
     Combining a list of dataframes with the same columns into one df
     '''
-    combined_df = pd.DataFrame()  # Start with an empty DataFrame
-
-    for chunk in dfs:
-        combined_df = pd.concat([combined_df, chunk], ignore_index=True)
-        # Clear the previous chunk from memory
-        del chunk
-        # Force garbage collection
-        gc.collect()
-
-    return combined_df
+    return pd.concat(dfs, ignore_index=True)
 
 def get_ply_comment(plyfile):
     """
@@ -57,6 +48,7 @@ def get_cf_crs(ply_filepath=None, proj4str=None):
     """
     errors = []
     warnings = []
+    cf_crs = None
 
     if ply_filepath:
         try:
@@ -64,20 +56,21 @@ def get_cf_crs(ply_filepath=None, proj4str=None):
             # get projection string from the comment
             ind_crs = comment_str.find("utm_crs")
             if ind_crs == -1:
-                return None
+                warnings.append("No 'utm_crs' found in PLY header comment.")
+                return None, errors, warnings
 
             proj4str = comment_str[ind_crs:].split(";")[0].split("utm_crs")[1]
             proj4str = proj4str[proj4str.find("=")+1:]
             crs = CRS.from_proj4(proj4str)
             cf_crs = crs.to_cf()
-        except:
-            warnings.append("Unable to compute CRS from proj4str in comments of header in PLY file. This is not required if latitude and longitude are already in the PLY file. You can alternatively use the proj4str or crs_config arguments.")
+        except Exception as e:
+            warnings.append(f"Unable to compute CRS from proj4str in PLY header comment ({e}). This is not required if latitude and longitude are already in the PLY file. You can alternatively use the proj4str or crs_config arguments.")
     elif proj4str:
         try:
             crs = CRS.from_proj4(proj4str)
             cf_crs = crs.to_cf()
-        except:
-            errors.append("Unable to compute CRS from proj4str provided")
+        except Exception as e:
+            errors.append(f"Unable to compute CRS from proj4str provided: {e}")
     else:
         cf_crs = None
         errors.append("Couldn't find proj4str to compute CRS variable from")
@@ -85,12 +78,11 @@ def get_cf_crs(ply_filepath=None, proj4str=None):
     return cf_crs, errors, warnings
 
 
-def utm_to_latlon(x, y, cf_crs):
+def utm_to_latlon(x, y, cf_crs, transformer=None):
 
-    crs = CRS.from_cf(cf_crs)
-
-    # Create a Transformer object for UTM to WGS84 conversion
-    transformer = Transformer.from_crs(crs, CRS.from_epsg(4326), always_xy=True)
+    if transformer is None:
+        crs = CRS.from_cf(cf_crs)
+        transformer = Transformer.from_crs(crs, CRS.from_epsg(4326), always_xy=True)
 
     # Convert UTM (x, y) arrays to lat/lon arrays
     lon, lat = transformer.transform(x, y)
@@ -100,60 +92,202 @@ def process_chunk(start, end, data_dict):
     chunk = {key: value[start:end] for key, value in data_dict.items()}
     return pd.DataFrame(chunk)
 
-def las_to_df(las_filepath, cf_crs, variable_mapping, xcoord=None, ycoord=None, zcoord=None):
+
+def list_variables_in_las(las_filepath):
+    """
+    List dimension names available in a LAS/LAZ file.
+    """
+    with laspy.open(las_filepath) as f:
+        # Get dimension names (e.g., X, Y, Z, Intensity, etc.)
+        # dimension_names is a property of the point format
+        return list(f.header.point_format.dimension_names)
+
+def compute_time_coverage(las_filepath, leap_seconds=18):
+    """
+    Scan all GPS times in a LAS/LAZ file and return ISO8601 UTC strings for
+    time_coverage_start and time_coverage_end.
+
+    Returns (time_coverage_start, time_coverage_end) as strings in the format
+    'YYYY-MM-DDTHH:MM:SSZ', or (None, None) if the file has no gps_time dimension.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    GPS_EPOCH_OFFSET = 1315964800  # seconds between GPS epoch (1980-01-06) and Unix epoch
+
+    with laspy.open(las_filepath) as f:
+        if 'gps_time' not in [d.lower() for d in f.header.point_format.dimension_names]:
+            return None, None
+        if not f.header.global_encoding.gps_time_type:
+            raise ValueError(
+                f"LAS file '{las_filepath}' uses GPS Week Time (global encoding bit 0 = 0). "
+                "Only Adjusted GPS Time (bit 0 = 1) is supported."
+            )
+        gps_min = np.inf
+        gps_max = -np.inf
+        for chunk in f.chunk_iterator(1_000_000):
+            vals = np.array(chunk.gps_time)
+            chunk_min = float(np.min(vals))
+            chunk_max = float(np.max(vals))
+            if chunk_min < gps_min:
+                gps_min = chunk_min
+            if chunk_max > gps_max:
+                gps_max = chunk_max
+
+    def gps_to_iso(gps_t):
+        unix = gps_t + GPS_EPOCH_OFFSET - leap_seconds
+        dt = datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(seconds=int(unix))
+        return dt.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+    return gps_to_iso(gps_min), gps_to_iso(gps_max)
+
+
+def compute_gps_time_reference(las_filepath, leap_seconds=18):
+    """
+    Determine the GPS time reference for a LAS/LAZ file.
+
+    Returns (gps_time_0, units_str) where:
+      - gps_time_0 is the raw Adjusted GPS Time of the first point (float seconds)
+      - units_str is a CF-compliant units string, e.g. "seconds since 2024-05-01 12:00:00 UTC"
+
+    The reference datetime is derived by converting gps_time_0 to UTC:
+      UTC = GPS_epoch_1970_offset (1315964800) + gps_time_0 - leap_seconds
+
+    leap_seconds corrects for the fact that GPS time is an atomic scale with no leap
+    seconds, while UTC does. As of 2024 this is 18. Set via variable_mapping.yml.
+    """
+    from datetime import datetime, timedelta, timezone
+    with laspy.open(las_filepath) as f:
+        if not f.header.global_encoding.gps_time_type:
+            raise ValueError(
+                f"LAS file '{las_filepath}' uses GPS Week Time (global encoding bit 0 = 0). "
+                "Only Adjusted GPS Time (bit 0 = 1) is supported. "
+                "Re-export the file with Adjusted GPS Time enabled."
+            )
+        chunk = next(f.chunk_iterator(1000))
+        gps_time_0 = float(np.min(np.array(chunk.gps_time)))
+
+    unix_ref = gps_time_0 + 1315964800 - leap_seconds
+    # Floor to whole seconds so the units string (which has no sub-second precision)
+    # is exact. epoch_time values are relative to this floored reference, so the
+    # fractional-second part of gps_time_0 is absorbed into epoch_time[0] rather
+    # than being silently dropped.
+    unix_ref_floor = int(unix_ref)
+    ref_dt = datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(seconds=unix_ref_floor)
+    units_str = f"seconds since {ref_dt.strftime('%Y-%m-%d %H:%M:%S')} UTC"
+    # Return the GPS time corresponding to unix_ref_floor so that epoch offsets
+    # are computed relative to the same whole-second boundary as the units string.
+    gps_time_0_ref = unix_ref_floor - 1315964800 + leap_seconds
+    return gps_time_0_ref, units_str
+
+
+def las_to_df(las_filepath, cf_crs, variable_mapping, xcoord=None, ycoord=None, zcoord=None, gps_time_offset=None):
     # Open the LAS file
     las = laspy.read(las_filepath)
-    print('File read in')
+    print(f'File {las_filepath} read in')
 
     data_dict = {}
 
-    # Get x, y, z coordinates and convert them to NumPy arrays. Scalar and offset applied.
+    # 1. Always get coordinates
+    # las.x, .y, .z apply the scale and offset automatically
     data_dict['x'] = np.array(las.x)
     data_dict['y'] = np.array(las.y)
     data_dict['z'] = np.array(las.z)
-
     print('x,y,z added to dict')
 
-    # List of variables to extract
-    variable_list = ['blue', 'red', 'green', 'scan_angle_rank', 'epoch', 'intensity']
+    # 2. Get list of available dimensions in the LAS file (normalize to lowercase)
+    # las.point_format.dimension_names generator converted to list
+    las_dims = {d.lower(): d for d in list(las.point_format.dimension_names)}
 
-    # Iterate over variable_list and check if the variable exists in las.point_format.dimensions
-    for var in variable_list:
-        if var in [dim.name for dim in las.point_format.dimensions]:
-            print('adding ',var,' to dict')
-            data_dict[var] = np.array(las[var])  # Ensure conversion to NumPy array
+    # 3. Dynamically extract variables based on variable_mapping.yml
+    # This replaces the hardcoded variable_list
+    for netcdf_var, details in variable_mapping.items():
+        if 'possible_names' not in details:
+            continue
+            
+        for name in details['possible_names']:
+            lower_name = name.lower()
+            
+            # Check if this possible name exists in the LAS file
+            if lower_name in las_dims:
+                # Use the exact case from the LAS file
+                las_name = las_dims[lower_name]
+                print(f'adding {las_name} to dict (mapped to {netcdf_var})')
+                
+                values = np.array(las[las_name])
 
-    # Convert the dictionary to a pandas DataFrame
-    # Process in smaller chunks, for example, chunks of 10000 rows
+                # 4. Fix Time: Convert GPS Time to Unix Epoch
+                # NetCDF expects "seconds since 1970...", LAS provides "seconds since 1980..."
+                # We add the offset: 1 billion (LAS offset) + 315964800 (GPS-Unix offset)
+                if lower_name == 'gps_time':
+                    if not las.header.global_encoding.gps_time_type:
+                        raise ValueError(
+                            f"LAS file '{las_filepath}' uses GPS Week Time (global encoding bit 0 = 0). "
+                            "Only Adjusted GPS Time (bit 0 = 1) is supported. "
+                            "Re-export the file with Adjusted GPS Time enabled."
+                        )
+                    if gps_time_offset is None:
+                        raise ValueError(
+                            "gps_time_offset must be provided to las_to_df() when the file contains GPS time. "
+                            "Call compute_gps_time_reference() first."
+                        )
+                    values = values - gps_time_offset
+                    print(f'  - Applied GPS time reference offset to {las_name}')
+
+                # LAS 1.4 (point format >= 6) stores scan_angle as int16 in 0.006°/unit.
+                # Earlier formats store scan_angle_rank as int8 in 1°/unit (already degrees).
+                # Normalise to degrees here so the NetCDF always stores degree values.
+                if lower_name == 'scan_angle' and las.header.point_format.id >= 6:
+                    values = values.astype(np.float32) * 0.006
+                    print(f'  - Converted LAS 1.4 scan_angle int16 → degrees (×0.006)')
+
+                data_dict[name] = values
+                break # Found a match for this variable, stop checking possible names
+
+    # 5. Convert to DataFrame
+    # Note: Chunking here is technically redundant since laspy.read() already loaded 
+    # everything into RAM, but we keep the logic to minimize code changes.
     chunk_size = 10000000
     num_rows = len(data_dict['x'])
 
-    # Process each chunk
     dfs = []
     print('Processing chunks to df')
     for i in range(0, num_rows, chunk_size):
         df_chunk = process_chunk(i, i + chunk_size, data_dict)
-        # If X, Y and Z are equal to lat, lon, altitude
-        if xcoord:
-            df_chunk.rename(columns={'x': xcoord}, inplace=True)
-        if ycoord:
-            df_chunk.rename(columns={'y': ycoord}, inplace=True)
-        if zcoord:
-            df_chunk.rename(columns={'z': zcoord}, inplace=True)
+        
+        # Rename standard coordinate columns if user specified overrides
+        if xcoord: df_chunk.rename(columns={'x': xcoord}, inplace=True)
+        if ycoord: df_chunk.rename(columns={'y': ycoord}, inplace=True)
+        if zcoord: df_chunk.rename(columns={'z': zcoord}, inplace=True)
+        
+        # Ensure default mapping works for create_netcdf
+        if 'X' not in df_chunk.columns and 'x' in df_chunk.columns:
+            df_chunk.rename(columns={'x': 'X'}, inplace=True)
+        if 'Y' not in df_chunk.columns and 'y' in df_chunk.columns:
+            df_chunk.rename(columns={'y': 'Y'}, inplace=True)
+        if 'Z' not in df_chunk.columns and 'z' in df_chunk.columns:
+            df_chunk.rename(columns={'z': 'Z'}, inplace=True)
+
         dfs.append(df_chunk)
 
     print('Calculating lat/lon')
     if not all(col in dfs[0].columns for col in ['latitude', 'longitude']):
-        cf_crs = get_cf_crs()
-        processed_dfs = []
-        for df in dfs:
-            # Calculate latitude and longitude from X and Y and the CRS
-            lat, lon = utm_to_latlon(df['x'].values, df['y'].values, cf_crs)
-            df['latitude'], df['longitude'] = lat, lon
-            processed_dfs.append(df)
-        dfs = processed_dfs
-    else:
-        pass
+        # If CRS config is provided, use it. Otherwise try to guess.
+        # Note: laspy provides CRS info in las.header.vlrs, but integrating that 
+        # requires more logic. Using your existing config/crs approach is easiest.
+        if cf_crs is None:
+             cf_crs = get_cf_crs() # Fallback to PLY logic (might fail for LAS)
+        
+        if cf_crs:
+            processed_dfs = []
+            for df in dfs:
+                # Find the X and Y columns for transformation
+                x_col = xcoord if xcoord else 'X'
+                y_col = ycoord if ycoord else 'Y'
+                
+                lat, lon = utm_to_latlon(df[x_col].values, df[y_col].values, cf_crs)
+                df['latitude'], df['longitude'] = lat, lon
+                processed_dfs.append(df)
+            dfs = processed_dfs
 
     print('combining dataframes')
     combined_df = combine_dataframes(dfs)
@@ -218,7 +352,7 @@ def ply_to_df(ply_filepath, cf_crs, variable_mapping, xcoord=None, ycoord=None, 
             processed_dfs.append(df)
         dfs = processed_dfs
     else:
-        pass
+        dfs = dataframes
 
     combined_df = combine_dataframes(dfs)
 
@@ -312,3 +446,115 @@ def read_hyspex_stream(
             yield stacked
 
     return _generator(), wavelengths
+
+
+def get_las_metadata(las_filepath, cf_crs):
+    """
+    Reads LAS header to get bounds and point count without loading data.
+    Returns dictionary with counts and computed lat/lon bounds.
+    """
+    with laspy.open(las_filepath) as f:
+        header = f.header
+        count = header.point_count
+        
+        # Get bounding box
+        min_x, min_y, min_z = header.mins
+        max_x, max_y, max_z = header.maxs
+        
+        result = {
+            'num_points': count,
+            'x_min': min_x, 'x_max': max_x,
+            'y_min': min_y, 'y_max': max_y,
+            'z_min': min_z, 'z_max': max_z,
+            'lat_min': None, 'lat_max': None,
+            'lon_min': None, 'lon_max': None,
+        }
+
+        if cf_crs is not None:
+            # Reproject corners to get Lat/Lon bounds for global attributes
+            # (Approximate but sufficient for metadata)
+            xs = [min_x, max_x, min_x, max_x]
+            ys = [min_y, min_y, max_y, max_y]
+            lats, lons = utm_to_latlon(np.array(xs), np.array(ys), cf_crs)
+            result['lat_min'] = np.min(lats)
+            result['lat_max'] = np.max(lats)
+            result['lon_min'] = np.min(lons)
+            result['lon_max'] = np.max(lons)
+
+        return result
+
+def read_las_generator(las_filepath, cf_crs, variable_mapping, chunk_size=1_000_000, gps_time_offset=None):
+    """
+    Yields chunks of LAS data as dictionaries of NumPy arrays.
+    Replaces las_to_df for memory efficiency.
+    """
+    # Build the CRS transformer once — only when lat/lon are actually requested
+    # in the variable mapping. If the mapping contains only projected coords (X/Y/Z),
+    # reprojection is skipped entirely, avoiding redundant data and computation.
+    _needs_latlon = 'latitude' in variable_mapping or 'longitude' in variable_mapping
+    transformer = None
+    if cf_crs is not None and _needs_latlon:
+        _crs = CRS.from_cf(cf_crs)
+        transformer = Transformer.from_crs(_crs, CRS.from_epsg(4326), always_xy=True)
+
+    with laspy.open(las_filepath) as f:
+        # Create a lookup for dimension names (normalize to lowercase)
+        las_dims = {d.lower(): d for d in list(f.header.point_format.dimension_names)}
+
+        # Iterate over the file in chunks
+        for chunk in f.chunk_iterator(chunk_size):
+            data = {}
+
+            # 1. Get Coordinates (Always needed)
+            # laspy applies scale/offset automatically
+            data['X'] = np.array(chunk.x)
+            data['Y'] = np.array(chunk.y)
+            data['Z'] = np.array(chunk.z)
+
+            # 2. Convert to Lat/Lon (only if CRS is available and requested)
+            if transformer is not None:
+                lat, lon = utm_to_latlon(data['X'], data['Y'], cf_crs, transformer=transformer)
+                data['latitude'] = lat
+                data['longitude'] = lon
+
+            # 3. Get other variables based on mapping
+            for netcdf_var, details in variable_mapping.items():
+                # Skip coords we already handled
+                if netcdf_var in ['X', 'Y', 'Z', 'latitude', 'longitude', 'altitude']:
+                    continue
+                
+                if 'possible_names' in details:
+                    for name in details['possible_names']:
+                        lower_name = name.lower()
+                        if lower_name in las_dims:
+                            val = np.array(chunk[las_dims[lower_name]])
+                            
+                            # Handle Time Conversion (GPS -> relative seconds since survey start)
+                            if lower_name == 'gps_time':
+                                if not f.header.global_encoding.gps_time_type:
+                                    raise ValueError(
+                                        f"LAS file '{las_filepath}' uses GPS Week Time (global encoding bit 0 = 0). "
+                                        "Only Adjusted GPS Time (bit 0 = 1) is supported. "
+                                        "Re-export the file with Adjusted GPS Time enabled."
+                                    )
+                                if gps_time_offset is None:
+                                    raise ValueError(
+                                        "gps_time_offset must be provided to read_las_generator() when the file "
+                                        "contains GPS time. Call compute_gps_time_reference() first."
+                                    )
+                                val = val - gps_time_offset
+
+                            # LAS 1.4 (point format >= 6) stores scan_angle as int16 in
+                            # 0.006°/unit; normalise to degrees for consistent NetCDF storage.
+                            if lower_name == 'scan_angle' and f.header.point_format.id >= 6:
+                                val = val.astype(np.float32) * 0.006
+
+                            data[netcdf_var] = val
+                            break # Found match, move to next var
+
+            # 4. Handle Altitude alias: only copy Z→altitude when altitude is in the mapping
+            # and wasn't matched directly from a LAS dimension name.
+            if 'altitude' in variable_mapping and 'altitude' not in data:
+                data['altitude'] = data['Z']
+
+            yield data
